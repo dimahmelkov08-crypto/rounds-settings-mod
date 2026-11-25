@@ -23,6 +23,7 @@ namespace RoundsSettingsMod
         public static ConfigEntry<int> RoundsToWin;   // раундов до победы в матче
         public static ConfigEntry<int> PointsToWin;   // очков до победы в раунде
         public static ConfigEntry<int> CardsPerRound; // карт за выбор
+        public static ConfigEntry<int> OfferedCards; // сколько карт показывается на выбор
         public static ConfigEntry<int> RerollsPerPick; // сколько раз можно обновить предложенные карты
         public static ConfigEntry<KeyCode> RerollKey;
         public static ConfigEntry<int> TimeLimit;     // сек на очко, 0 = без лимита
@@ -31,13 +32,15 @@ namespace RoundsSettingsMod
 
         // меню
         bool menuOpen;
-        Rect win = new Rect(40, 60, 380, 440);
+        Rect win = new Rect(40, 60, 380, 500);
         GUIStyle titleStyle, hintStyle;
 
         // таймер
         float roundTimer;
         bool wasActive;
         bool timeUpFired;
+
+        public static void Warn(string m) { Instance.Logger.LogWarning(m); }
 
         void Awake()
         {
@@ -48,6 +51,7 @@ namespace RoundsSettingsMod
             RoundsToWin = Config.Bind("General", "RoundsToWin", 2, "Раундов до победы в матче (в игре по умолчанию 2)");
             PointsToWin = Config.Bind("General", "PointsToWin", 2, "Очков до победы в раунде (в игре по умолчанию 2)");
             CardsPerRound = Config.Bind("General", "CardsPerRound", 1, "Сколько карт (способностей) выбирает игрок за один выбор (в игре по умолчанию 1)");
+            OfferedCards = Config.Bind("General", "OfferedCards", 5, "Сколько карт показывается на выбор (2-9)");
             RerollsPerPick = Config.Bind("General", "RerollsPerPick", 3, "Сколько раз за выбор можно обновить предложенные карты (0 = выключено)");
             RerollKey = Config.Bind("General", "RerollKey", KeyCode.R, "Клавиша обновления карт");
             TimeLimit = Config.Bind("General", "TimeLimitSeconds", 0, "Лимит времени на очко, сек. 0 = выключен");
@@ -65,7 +69,7 @@ namespace RoundsSettingsMod
         }
 
         // ---------- синхронизация (хост = источник правды) ----------
-        const string K_ON = "rs_on", K_R = "rs_r", K_P = "rs_p", K_T = "rs_t", K_C = "rs_c", K_X = "rs_x";
+        const string K_ON = "rs_on", K_R = "rs_r", K_P = "rs_p", K_T = "rs_t", K_C = "rs_c", K_X = "rs_x", K_O = "rs_o";
         public static bool Online { get { return PhotonNetwork.InRoom && !PhotonNetwork.OfflineMode; } }
         public static bool IsClient { get { return Online && !PhotonNetwork.IsMasterClient; } }
 
@@ -78,6 +82,7 @@ namespace RoundsSettingsMod
         public static int EffRounds { get { return IsClient ? Prop(K_R, 2) : RoundsToWin.Value; } }
         public static int EffPoints { get { return IsClient ? Prop(K_P, 2) : PointsToWin.Value; } }
         public static int EffCards { get { return IsClient ? Prop(K_C, 1) : CardsPerRound.Value; } }
+        public static int EffOffered { get { return IsClient ? Prop(K_O, 5) : OfferedCards.Value; } }
         public static int EffRerolls { get { return IsClient ? Prop(K_X, 0) : RerollsPerPick.Value; } }
         public static int EffTime { get { return IsClient ? Prop(K_T, 0) : TimeLimit.Value; } }
 
@@ -86,9 +91,9 @@ namespace RoundsSettingsMod
             if (!Online || !PhotonNetwork.IsMasterClient) return;
             var pr = PhotonNetwork.CurrentRoom.CustomProperties;
             int on = Enabled.Value ? 1 : 0;
-            if (Prop(K_ON, -1) == on && Prop(K_R, -1) == RoundsToWin.Value && Prop(K_P, -1) == PointsToWin.Value && Prop(K_T, -1) == TimeLimit.Value && Prop(K_C, -1) == CardsPerRound.Value && Prop(K_X, -1) == RerollsPerPick.Value) return;
+            if (Prop(K_ON, -1) == on && Prop(K_R, -1) == RoundsToWin.Value && Prop(K_P, -1) == PointsToWin.Value && Prop(K_T, -1) == TimeLimit.Value && Prop(K_C, -1) == CardsPerRound.Value && Prop(K_X, -1) == RerollsPerPick.Value && Prop(K_O, -1) == OfferedCards.Value) return;
             var h = new ExitGames.Client.Photon.Hashtable();
-            h[K_ON] = on; h[K_R] = RoundsToWin.Value; h[K_P] = PointsToWin.Value; h[K_T] = TimeLimit.Value; h[K_C] = CardsPerRound.Value; h[K_X] = RerollsPerPick.Value;
+            h[K_ON] = on; h[K_R] = RoundsToWin.Value; h[K_P] = PointsToWin.Value; h[K_T] = TimeLimit.Value; h[K_C] = CardsPerRound.Value; h[K_X] = RerollsPerPick.Value; h[K_O] = OfferedCards.Value;
             PhotonNetwork.CurrentRoom.SetCustomProperties(h);
         }
 
@@ -113,6 +118,46 @@ namespace RoundsSettingsMod
                     Traverse.Create(UIHandler.instance).Method("SetNumberOfRounds", new object[] { gm.roundsToWinGame }).GetValue();
             }
             catch (Exception e) { Instance.Logger.LogWarning("UI refresh: " + e.Message); }
+        }
+
+        // ---------- число предлагаемых карт ----------
+        static Transform[] origSlots;
+
+        public static void ResizeSlots(CardChoice cc)
+        {
+            var tr = Traverse.Create(cc);
+            var cur = tr.Field("children").GetValue<Transform[]>();
+            if (cur == null || cur.Length == 0) return;
+            if (origSlots == null)
+            {
+                origSlots = (Transform[])cur.Clone();
+                var sb = new System.Text.StringBuilder("Card slots: " + origSlots.Length);
+                foreach (var t in origSlots) sb.Append(" " + t.position);
+                Instance.Logger.LogInfo(sb.ToString());
+            }
+            if (!EffEnabled) { tr.Field("children").SetValue(origSlots); return; }
+            int n = Mathf.Clamp(EffOffered, 2, 9);
+            int L = origSlots.Length;
+            if (n == L) { tr.Field("children").SetValue(origSlots); return; }
+            var res = new Transform[n];
+            for (int i = 0; i < n; i++)
+            {
+                float f = (n == 1 ? 0f : (float)i / (n - 1)) * (L - 1);
+                int a = Mathf.Min((int)f, L - 2); float u = f - a;
+                Vector3 pos = Vector3.Lerp(origSlots[a].position, origSlots[a + 1].position, u);
+                Quaternion rot = Quaternion.Slerp(origSlots[a].rotation, origSlots[a + 1].rotation, u);
+                Transform t;
+                if (i < L) t = origSlots[i];
+                else
+                {
+                    t = new GameObject("RS_Slot" + i).transform;
+                    t.SetParent(origSlots[0].parent, false);
+                    UnityEngine.Object.DontDestroyOnLoad(t.gameObject);
+                }
+                t.position = pos; t.rotation = rot;
+                res[i] = t;
+            }
+            tr.Field("children").SetValue(res);
         }
 
         // ---------- реролл карт ----------
@@ -250,6 +295,7 @@ namespace RoundsSettingsMod
                 GUILayout.Label("Очков до победы в раунде: " + EffPoints);
                 GUILayout.Label("Карт за выбор: " + EffCards);
                 GUILayout.Label("Обновлений карт за выбор: " + EffRerolls);
+                GUILayout.Label("Карт на выбор: " + EffOffered);
                 GUILayout.Label("Лимит времени на очко: " + (EffTime == 0 ? "выкл." : EffTime + " сек"));
                 if (GUILayout.Button("Закрыть")) menuOpen = false;
                 GUILayout.EndVertical();
@@ -264,6 +310,7 @@ namespace RoundsSettingsMod
 
             CardsPerRound.Value = IntSlider("Карт (способностей) за выбор", CardsPerRound.Value, 1, 100);
 
+            OfferedCards.Value = IntSlider("Карт показывается на выбор", OfferedCards.Value, 2, 9);
             RerollsPerPick.Value = IntSlider("Обновлений карт за выбор [" + RerollKey.Value + "]", RerollsPerPick.Value, 0, 20);
 
             int t = TimeLimit.Value;
@@ -304,6 +351,13 @@ namespace RoundsSettingsMod
 
     static class Patches
     {
+        [HarmonyPatch(typeof(CardChoice), "StartPick")]
+        [HarmonyPrefix] static void StartPickPre(CardChoice __instance)
+        {
+            try { RoundsSettingsPlugin.ResizeSlots(__instance); }
+            catch (Exception e) { RoundsSettingsPlugin.Warn("ResizeSlots: " + e); }
+        }
+
         // сколько карт выбирает игрок за один выбор (старт игры и после каждого раунда)
         [HarmonyPatch(typeof(CardChoice), "DoPick")]
         [HarmonyPrefix] static void DoPickPre(ref int picksToSet)
