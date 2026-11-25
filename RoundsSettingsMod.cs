@@ -201,8 +201,8 @@ namespace RoundsSettingsMod
             Enabled.Value = GUILayout.Toggle(Enabled.Value, " Мод включён");
             GUILayout.Space(6);
 
-            RoundsToWin.Value = IntSlider("Раундов до победы в матче", RoundsToWin.Value, 1, 20);
-            PointsToWin.Value = IntSlider("Очков до победы в раунде", PointsToWin.Value, 1, 20);
+            RoundsToWin.Value = IntSlider("Раундов до победы в матче", RoundsToWin.Value, 1, 1000);
+            PointsToWin.Value = IntSlider("Очков до победы в раунде", PointsToWin.Value, 1, 1000);
 
             int t = TimeLimit.Value;
             GUILayout.Label("Лимит времени на очко: " + (t == 0 ? "выкл." : t + " сек"));
@@ -230,7 +230,13 @@ namespace RoundsSettingsMod
         static int IntSlider(string label, int v, int min, int max)
         {
             GUILayout.Label(label + ": " + v);
-            return Mathf.RoundToInt(GUILayout.HorizontalSlider(v, min, max));
+            GUILayout.BeginHorizontal();
+            int nv = Mathf.RoundToInt(GUILayout.HorizontalSlider(v, min, max));
+            string txt = GUILayout.TextField(nv.ToString(), 4, GUILayout.Width(50));
+            int parsed;
+            if (txt != nv.ToString() && int.TryParse(txt, out parsed)) nv = parsed;
+            GUILayout.EndHorizontal();
+            return Mathf.Clamp(nv, min, max);
         }
     }
 
