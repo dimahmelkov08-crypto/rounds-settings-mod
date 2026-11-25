@@ -1,4 +1,6 @@
 using System;
+using System.Collections;
+using System.Reflection;
 using BepInEx;
 using BepInEx.Configuration;
 using HarmonyLib;
@@ -20,13 +22,16 @@ namespace RoundsSettingsMod
         public static ConfigEntry<bool> Enabled;
         public static ConfigEntry<int> RoundsToWin;   // раундов до победы в матче
         public static ConfigEntry<int> PointsToWin;   // очков до победы в раунде
+        public static ConfigEntry<int> CardsPerRound; // карт за выбор
+        public static ConfigEntry<int> RerollsPerPick; // сколько раз можно обновить предложенные карты
+        public static ConfigEntry<KeyCode> RerollKey;
         public static ConfigEntry<int> TimeLimit;     // сек на очко, 0 = без лимита
         public static ConfigEntry<KeyCode> MenuKey;
         public static RoundsSettingsPlugin Instance;
 
         // меню
         bool menuOpen;
-        Rect win = new Rect(40, 60, 380, 330);
+        Rect win = new Rect(40, 60, 380, 440);
         GUIStyle titleStyle, hintStyle;
 
         // таймер
@@ -42,6 +47,9 @@ namespace RoundsSettingsMod
             Enabled = Config.Bind("General", "Enabled", true, "Включить мод");
             RoundsToWin = Config.Bind("General", "RoundsToWin", 2, "Раундов до победы в матче (в игре по умолчанию 2)");
             PointsToWin = Config.Bind("General", "PointsToWin", 2, "Очков до победы в раунде (в игре по умолчанию 2)");
+            CardsPerRound = Config.Bind("General", "CardsPerRound", 1, "Сколько карт (способностей) выбирает игрок за один выбор (в игре по умолчанию 1)");
+            RerollsPerPick = Config.Bind("General", "RerollsPerPick", 3, "Сколько раз за выбор можно обновить предложенные карты (0 = выключено)");
+            RerollKey = Config.Bind("General", "RerollKey", KeyCode.R, "Клавиша обновления карт");
             TimeLimit = Config.Bind("General", "TimeLimitSeconds", 0, "Лимит времени на очко, сек. 0 = выключен");
             MenuKey = Config.Bind("General", "MenuKey", KeyCode.F8, "Клавиша меню");
 
@@ -53,10 +61,11 @@ namespace RoundsSettingsMod
         {
             if (Input.GetKeyDown(MenuKey.Value)) menuOpen = !menuOpen;
             TickRoundTimer();
+            TickReroll();
         }
 
         // ---------- синхронизация (хост = источник правды) ----------
-        const string K_ON = "rs_on", K_R = "rs_r", K_P = "rs_p", K_T = "rs_t";
+        const string K_ON = "rs_on", K_R = "rs_r", K_P = "rs_p", K_T = "rs_t", K_C = "rs_c", K_X = "rs_x";
         public static bool Online { get { return PhotonNetwork.InRoom && !PhotonNetwork.OfflineMode; } }
         public static bool IsClient { get { return Online && !PhotonNetwork.IsMasterClient; } }
 
@@ -68,6 +77,8 @@ namespace RoundsSettingsMod
         public static bool EffEnabled { get { return IsClient ? Prop(K_ON, 0) == 1 : Enabled.Value; } }
         public static int EffRounds { get { return IsClient ? Prop(K_R, 2) : RoundsToWin.Value; } }
         public static int EffPoints { get { return IsClient ? Prop(K_P, 2) : PointsToWin.Value; } }
+        public static int EffCards { get { return IsClient ? Prop(K_C, 1) : CardsPerRound.Value; } }
+        public static int EffRerolls { get { return IsClient ? Prop(K_X, 0) : RerollsPerPick.Value; } }
         public static int EffTime { get { return IsClient ? Prop(K_T, 0) : TimeLimit.Value; } }
 
         static void Publish()
@@ -75,9 +86,9 @@ namespace RoundsSettingsMod
             if (!Online || !PhotonNetwork.IsMasterClient) return;
             var pr = PhotonNetwork.CurrentRoom.CustomProperties;
             int on = Enabled.Value ? 1 : 0;
-            if (Prop(K_ON, -1) == on && Prop(K_R, -1) == RoundsToWin.Value && Prop(K_P, -1) == PointsToWin.Value && Prop(K_T, -1) == TimeLimit.Value) return;
+            if (Prop(K_ON, -1) == on && Prop(K_R, -1) == RoundsToWin.Value && Prop(K_P, -1) == PointsToWin.Value && Prop(K_T, -1) == TimeLimit.Value && Prop(K_C, -1) == CardsPerRound.Value && Prop(K_X, -1) == RerollsPerPick.Value) return;
             var h = new ExitGames.Client.Photon.Hashtable();
-            h[K_ON] = on; h[K_R] = RoundsToWin.Value; h[K_P] = PointsToWin.Value; h[K_T] = TimeLimit.Value;
+            h[K_ON] = on; h[K_R] = RoundsToWin.Value; h[K_P] = PointsToWin.Value; h[K_T] = TimeLimit.Value; h[K_C] = CardsPerRound.Value; h[K_X] = RerollsPerPick.Value;
             PhotonNetwork.CurrentRoom.SetCustomProperties(h);
         }
 
@@ -102,6 +113,44 @@ namespace RoundsSettingsMod
                     Traverse.Create(UIHandler.instance).Method("SetNumberOfRounds", new object[] { gm.roundsToWinGame }).GetValue();
             }
             catch (Exception e) { Instance.Logger.LogWarning("UI refresh: " + e.Message); }
+        }
+
+        // ---------- реролл карт ----------
+        public static int RerollsLeft;
+        float lastReroll;
+
+        static bool Picking()
+        {
+            var cc = CardChoice.instance;
+            return cc != null && EffEnabled && Traverse.Create(cc).Field("IsPicking").GetValue<bool>();
+        }
+
+        static bool LocalIsPicker()
+        {
+            if (PhotonNetwork.OfflineMode || !PhotonNetwork.InRoom) return true;
+            var cc = CardChoice.instance;
+            int id = Traverse.Create(cc).Field("pickrID").GetValue<int>();
+            var pl = Traverse.Create(PlayerManager.instance).Method("GetPlayerWithID", new object[] { id }).GetValue<Player>();
+            return pl != null && pl.data.view.IsMine;
+        }
+
+        void TickReroll()
+        {
+            if (!Picking() || RerollsLeft <= 0) return;
+            if (!Input.GetKeyDown(RerollKey.Value) || Time.unscaledTime - lastReroll < 1f) return;
+            if (!LocalIsPicker()) return;
+            try
+            {
+                var cc = CardChoice.instance;
+                var tr = Traverse.Create(cc);
+                tr.Field("picks").SetValue(tr.Field("picks").GetValue<int>() + 1); // ReplaceCards уменьшает на 1
+                var it = (IEnumerator)typeof(CardChoice).GetMethod("ReplaceCards", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public)
+                    .Invoke(cc, new object[] { null, true });
+                cc.StartCoroutine(it);
+                RerollsLeft--;
+                lastReroll = Time.unscaledTime;
+            }
+            catch (Exception e) { Logger.LogWarning("Reroll failed: " + e); }
         }
 
         // ---------- таймер раунда ----------
@@ -176,6 +225,13 @@ namespace RoundsSettingsMod
                 GUI.Label(new Rect(sw / 2f - 100, 8, 200, 44), Mathf.CeilToInt(TimeLeft).ToString(), s);
             }
 
+            if (Picking() && EffRerolls > 0)
+            {
+                var rs = new GUIStyle(GUI.skin.label) { fontSize = 22, fontStyle = FontStyle.Bold, alignment = TextAnchor.UpperCenter };
+                rs.normal.textColor = RerollsLeft > 0 ? Color.white : Color.gray;
+                GUI.Label(new Rect(sw / 2f - 250, 56, 500, 34), "[" + RerollKey.Value + "] обновить карты: осталось " + RerollsLeft, rs);
+            }
+
             if (!menuOpen)
             {
                 if (GUI.Button(new Rect(8, 8, 150, 24), "Раунды [" + MenuKey.Value + "]")) menuOpen = true;
@@ -192,6 +248,8 @@ namespace RoundsSettingsMod
                 GUILayout.Label("Вы не хост: настройки задаёт хост комнаты.", titleStyle);
                 GUILayout.Label("Раундов до победы: " + EffRounds + (EffEnabled ? "" : " (мод у хоста выкл.)"));
                 GUILayout.Label("Очков до победы в раунде: " + EffPoints);
+                GUILayout.Label("Карт за выбор: " + EffCards);
+                GUILayout.Label("Обновлений карт за выбор: " + EffRerolls);
                 GUILayout.Label("Лимит времени на очко: " + (EffTime == 0 ? "выкл." : EffTime + " сек"));
                 if (GUILayout.Button("Закрыть")) menuOpen = false;
                 GUILayout.EndVertical();
@@ -204,6 +262,10 @@ namespace RoundsSettingsMod
             RoundsToWin.Value = IntSlider("Раундов до победы в матче", RoundsToWin.Value, 1, 1000);
             PointsToWin.Value = IntSlider("Очков до победы в раунде", PointsToWin.Value, 1, 1000);
 
+            CardsPerRound.Value = IntSlider("Карт (способностей) за выбор", CardsPerRound.Value, 1, 100);
+
+            RerollsPerPick.Value = IntSlider("Обновлений карт за выбор [" + RerollKey.Value + "]", RerollsPerPick.Value, 0, 20);
+
             int t = TimeLimit.Value;
             GUILayout.Label("Лимит времени на очко: " + (t == 0 ? "выкл." : t + " сек"));
             t = Mathf.RoundToInt(GUILayout.HorizontalSlider(t, 0, 300) / 5f) * 5;
@@ -212,9 +274,9 @@ namespace RoundsSettingsMod
 
             GUILayout.Space(8);
             GUILayout.BeginHorizontal();
-            if (GUILayout.Button("Стандарт (2/2)")) { RoundsToWin.Value = 2; PointsToWin.Value = 2; TimeLimit.Value = 0; }
-            if (GUILayout.Button("Быстро (1/1, 30с)")) { RoundsToWin.Value = 1; PointsToWin.Value = 1; TimeLimit.Value = 30; }
-            if (GUILayout.Button("Марафон (5/3)")) { RoundsToWin.Value = 5; PointsToWin.Value = 3; TimeLimit.Value = 0; }
+            if (GUILayout.Button("Стандарт (2/2)")) { RoundsToWin.Value = 2; PointsToWin.Value = 2; CardsPerRound.Value = 1; TimeLimit.Value = 0; }
+            if (GUILayout.Button("Быстро (1/1, 30с)")) { RoundsToWin.Value = 1; PointsToWin.Value = 1; CardsPerRound.Value = 1; TimeLimit.Value = 30; }
+            if (GUILayout.Button("Марафон (5/3)")) { RoundsToWin.Value = 5; PointsToWin.Value = 3; CardsPerRound.Value = 1; TimeLimit.Value = 0; }
             GUILayout.EndHorizontal();
 
             GUILayout.Space(6);
@@ -242,6 +304,14 @@ namespace RoundsSettingsMod
 
     static class Patches
     {
+        // сколько карт выбирает игрок за один выбор (старт игры и после каждого раунда)
+        [HarmonyPatch(typeof(CardChoice), "DoPick")]
+        [HarmonyPrefix] static void DoPickPre(ref int picksToSet)
+        {
+            RoundsSettingsPlugin.RerollsLeft = RoundsSettingsPlugin.EffEnabled ? RoundsSettingsPlugin.EffRerolls : 0;
+            if (RoundsSettingsPlugin.EffEnabled && picksToSet >= 1) picksToSet = Mathf.Max(1, RoundsSettingsPlugin.EffCards);
+        }
+
         [HarmonyPatch(typeof(GM_ArmsRace), "OnEnable")]
         [HarmonyPrefix] static void OnEnablePre() { RoundsSettingsPlugin.Apply(); }
 
