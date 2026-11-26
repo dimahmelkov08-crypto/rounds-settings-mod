@@ -169,6 +169,15 @@ namespace RoundsSettingsMod
             tr.Field("children").SetValue(res);
         }
 
+        // удалить карту так, чтобы она пропала и у второго игрока (карты выбора — сетевые объекты)
+        public static void KillCard(GameObject go)
+        {
+            if (go == null) return;
+            var pv = go.GetComponent<PhotonView>();
+            if (pv != null && PhotonNetwork.InRoom && pv.IsMine) PhotonNetwork.Destroy(go);
+            else UnityEngine.Object.Destroy(go);
+        }
+
         // ---------- реролл карт ----------
         public static int RerollsLeft;
         float lastReroll;
@@ -198,9 +207,15 @@ namespace RoundsSettingsMod
             {
                 var cc = CardChoice.instance;
                 var tr = Traverse.Create(cc);
+                // убираем текущие карты (с синхронизацией по сети), затем обычным способом раздаём новый набор
+                var spawned = tr.Field("spawnedCards").GetValue<System.Collections.IList>();
+                var old = new System.Collections.Generic.List<GameObject>();
+                foreach (var o in spawned) { var g = o as GameObject; if (g != null) old.Add(g); }
+                foreach (var g in old) KillCard(g);
+                spawned.Clear();
                 tr.Field("picks").SetValue(tr.Field("picks").GetValue<int>() + 1); // ReplaceCards уменьшает на 1
                 var it = (IEnumerator)typeof(CardChoice).GetMethod("ReplaceCards", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public)
-                    .Invoke(cc, new object[] { null, true });
+                    .Invoke(cc, new object[] { null, false });
                 cc.StartCoroutine(it);
                 RerollsLeft--;
                 lastReroll = Time.unscaledTime;
@@ -401,6 +416,16 @@ namespace RoundsSettingsMod
         [HarmonyPatch(typeof(CharacterData), "set_MaxHealth")]
         [HarmonyPrefix] static void SetMaxHp(ref float value) { value /= HpMult; }
 
+        // CardVisuals.Leave по умолчанию уничтожает карту только локально — у второго игрока она оставалась
+        [HarmonyPatch(typeof(CardVisuals), "Leave")]
+        [HarmonyPrefix] static bool LeavePre(CardVisuals __instance)
+        {
+            var root = __instance.transform.root.gameObject;
+            var pv = root.GetComponent<PhotonView>();
+            if (pv != null && PhotonNetwork.InRoom && !PhotonNetwork.OfflineMode && pv.IsMine) { PhotonNetwork.Destroy(root); return false; }
+            return true;
+        }
+
         [HarmonyPatch(typeof(CardChoice), "StartPick")]
         [HarmonyPrefix] static void StartPickPre(CardChoice __instance)
         {
@@ -429,7 +454,7 @@ namespace RoundsSettingsMod
                 foreach (var ci in UnityEngine.Object.FindObjectsOfType<CardInfo>())
                 {
                     if (ci == null || ci.GetComponent("PublicInt") == null) continue;
-                    UnityEngine.Object.Destroy(ci.gameObject);
+                    RoundsSettingsPlugin.KillCard(ci.gameObject);
                 }
                 var list = Traverse.Create(CardChoice.instance).Field("spawnedCards").GetValue<System.Collections.IList>();
                 if (list != null) list.Clear();
