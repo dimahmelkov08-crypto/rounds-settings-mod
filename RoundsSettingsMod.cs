@@ -41,7 +41,7 @@ namespace RoundsSettingsMod
 
         // меню
         bool menuOpen;
-        Rect win = new Rect(40, 60, 380, 740);
+        Rect win = new Rect(40, 60, 380, 780);
         GUIStyle titleStyle, hintStyle;
 
         // таймер
@@ -112,6 +112,36 @@ namespace RoundsSettingsMod
         {
             DisabledMaps.Value = string.Join(";", new System.Collections.Generic.List<string>(hs).ToArray());
         }
+        // ---------- тест-режим ----------
+        static bool showTest;
+        Vector2 testScroll;
+        bool onlyNewCards = true;
+        Rect testWin = new Rect(760, 60, 320, 560);
+
+        void DrawTestWindow(int id)
+        {
+            GUILayout.Label(TestTools.HasPlayer ? "Игрок найден — можно тестировать." : "Нет игрока. Запусти: Локально → Песочница.", hintStyle);
+            GUILayout.BeginHorizontal();
+            if (GUILayout.Button("Выбор карты (как в раунде)")) TestTools.StartPick();
+            if (GUILayout.Button("Лечить")) TestTools.Heal();
+            GUILayout.EndHorizontal();
+            if (TestTools.Status.Length > 0) GUILayout.Label(TestTools.Status, hintStyle);
+            onlyNewCards = GUILayout.Toggle(onlyNewCards, " Только новые карты мода");
+            GUILayout.Label("Выдать карту сразу:");
+            testScroll = GUILayout.BeginScrollView(testScroll, GUILayout.Height(380));
+            foreach (var ci in TestTools.AllCards())
+            {
+                bool custom = ci.gameObject.name.StartsWith("RS_");
+                if (onlyNewCards && !custom) continue;
+                string name;
+                try { name = custom ? CardCatalog.ById[ci.gameObject.name].Name : ci.CardName; } catch (Exception) { name = ci.gameObject.name; }
+                if (GUILayout.Button(name)) TestTools.GiveCard(ci);
+            }
+            GUILayout.EndScrollView();
+            if (GUILayout.Button("Закрыть")) showTest = false;
+            GUI.DragWindow(new Rect(0, 0, 10000, 22));
+        }
+
         static bool showMaps;
         Vector2 mapScroll;
         Rect mapWin = new Rect(440, 60, 300, 520);
@@ -404,6 +434,7 @@ namespace RoundsSettingsMod
             }
             win = GUI.Window(8841, win, DrawWindow, "Настройки раундов");
             if (showMaps) mapWin = GUI.Window(8842, mapWin, DrawMapWindow, "Выбор локаций");
+            if (showTest) testWin = GUI.Window(8843, testWin, DrawTestWindow, "Тест-режим (одному)");
         }
 
         void DrawWindow(int id)
@@ -438,6 +469,7 @@ namespace RoundsSettingsMod
             MapFilter.Value = GUILayout.Toggle(MapFilter.Value, " Выбор локаций");
             if (GUILayout.Button("Список локаций " + (showMaps ? "◂" : "▸"))) showMaps = !showMaps;
             GUILayout.EndHorizontal();
+            if (GUILayout.Button("Тест-режим для игры в одиночку " + (showTest ? "◂" : "▸"))) showTest = !showTest;
             RarityCustom.Value = GUILayout.Toggle(RarityCustom.Value, " Свои шансы редкости карт");
             if (RarityCustom.Value)
             {
