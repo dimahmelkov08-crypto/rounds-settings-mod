@@ -23,6 +23,7 @@ namespace RoundsSettingsMod
         public static ConfigEntry<int> RoundsToWin;   // раундов до победы в матче
         public static ConfigEntry<int> PointsToWin;   // очков до победы в раунде
         public static ConfigEntry<int> CardsPerRound; // карт за выбор
+        public static ConfigEntry<bool> CustomCards; // новые карты (нужен перезапуск, у всех игроков одинаково)
         public static ConfigEntry<int> OfferedCards; // сколько карт показывается на выбор
         public static ConfigEntry<int> RerollsPerPick; // сколько раз можно обновить предложенные карты
         public static ConfigEntry<KeyCode> RerollKey;
@@ -32,7 +33,7 @@ namespace RoundsSettingsMod
 
         // меню
         bool menuOpen;
-        Rect win = new Rect(40, 60, 380, 500);
+        Rect win = new Rect(40, 60, 380, 530);
         GUIStyle titleStyle, hintStyle;
 
         // таймер
@@ -51,13 +52,14 @@ namespace RoundsSettingsMod
             RoundsToWin = Config.Bind("General", "RoundsToWin", 2, "Раундов до победы в матче (в игре по умолчанию 2)");
             PointsToWin = Config.Bind("General", "PointsToWin", 2, "Очков до победы в раунде (в игре по умолчанию 2)");
             CardsPerRound = Config.Bind("General", "CardsPerRound", 1, "Сколько карт (способностей) выбирает игрок за один выбор (в игре по умолчанию 1)");
+            CustomCards = Config.Bind("Cards", "CustomCards", true, "Добавить в игру новые карты мода. Требует перезапуска игры и должно совпадать у всех игроков в онлайне");
             OfferedCards = Config.Bind("General", "OfferedCards", 5, "Сколько карт показывается на выбор (2-9)");
             RerollsPerPick = Config.Bind("General", "RerollsPerPick", 3, "Сколько раз за выбор можно обновить предложенные карты (0 = выключено)");
             RerollKey = Config.Bind("General", "RerollKey", KeyCode.R, "Клавиша обновления карт");
             TimeLimit = Config.Bind("General", "TimeLimitSeconds", 0, "Лимит времени на очко, сек. 0 = выключен");
             MenuKey = Config.Bind("General", "MenuKey", KeyCode.F8, "Клавиша меню");
 
-            new Harmony(GUID).PatchAll(typeof(Patches));
+            var hh = new Harmony(GUID); hh.PatchAll(typeof(Patches)); hh.PatchAll(typeof(CardPatches));
             Logger.LogInfo(NAME + " " + VERSION + " loaded. Menu key: " + MenuKey.Value);
         }
 
@@ -303,6 +305,7 @@ namespace RoundsSettingsMod
                 return;
             }
             Enabled.Value = GUILayout.Toggle(Enabled.Value, " Мод включён");
+            CustomCards.Value = GUILayout.Toggle(CustomCards.Value, " Новые карты (нужен перезапуск игры)");
             GUILayout.Space(6);
 
             RoundsToWin.Value = IntSlider("Раундов до победы в матче", RoundsToWin.Value, 1, 1000);
