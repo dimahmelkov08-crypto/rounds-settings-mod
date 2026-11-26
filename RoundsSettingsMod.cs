@@ -192,6 +192,7 @@ namespace RoundsSettingsMod
         {
             if (!Picking() || RerollsLeft <= 0) return;
             if (!Input.GetKeyDown(RerollKey.Value) || Time.unscaledTime - lastReroll < 1f) return;
+            if (Traverse.Create(CardChoice.instance).Field("isPlaying").GetValue<bool>()) return; // карты ещё появляются/исчезают
             if (!LocalIsPicker()) return;
             try
             {
@@ -420,6 +421,22 @@ namespace RoundsSettingsMod
             return false;
         }
 
+        // убрать с экрана все карты предыдущих наборов (у карт выбора есть компонент PublicInt)
+        public static void ClearPickCards()
+        {
+            try
+            {
+                foreach (var ci in UnityEngine.Object.FindObjectsOfType<CardInfo>())
+                {
+                    if (ci == null || ci.GetComponent("PublicInt") == null) continue;
+                    UnityEngine.Object.Destroy(ci.gameObject);
+                }
+                var list = Traverse.Create(CardChoice.instance).Field("spawnedCards").GetValue<System.Collections.IList>();
+                if (list != null) list.Clear();
+            }
+            catch (Exception e) { RoundsSettingsPlugin.Warn("ClearPickCards: " + e.Message); }
+        }
+
         static System.Collections.IEnumerator MultiPick(CardChoice cc, object[] args, int n)
         {
             var m = typeof(CardChoice).GetMethod("DoPick");
@@ -427,6 +444,8 @@ namespace RoundsSettingsMod
             {
                 if (k > 0)
                 {
+                    yield return new WaitForSecondsRealtime(0.6f);
+                    ClearPickCards();
                     try { typeof(CardChoiceVisuals).GetMethod("Show").Invoke(CardChoiceVisuals.instance, new object[] { args[1], true }); }
                     catch (Exception) { }
                 }
