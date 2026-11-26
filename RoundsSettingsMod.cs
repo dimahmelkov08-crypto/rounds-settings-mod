@@ -24,6 +24,7 @@ namespace RoundsSettingsMod
         public static ConfigEntry<int> PointsToWin;   // очков до победы в раунде
         public static ConfigEntry<int> CardsPerRound; // карт за выбор
         public static ConfigEntry<bool> CustomCards; // новые карты (нужен перезапуск, у всех игроков одинаково)
+        public static ConfigEntry<bool> ShowHp; // показывать здоровье числами над игроками
         public static ConfigEntry<int> HealthPercent; // максимальное здоровье игроков, % от обычного
         public static ConfigEntry<int> OfferedCards; // сколько карт показывается на выбор
         public static ConfigEntry<int> RerollsPerPick; // сколько раз можно обновить предложенные карты
@@ -34,7 +35,7 @@ namespace RoundsSettingsMod
 
         // меню
         bool menuOpen;
-        Rect win = new Rect(40, 60, 380, 580);
+        Rect win = new Rect(40, 60, 380, 610);
         GUIStyle titleStyle, hintStyle;
 
         // таймер
@@ -54,6 +55,7 @@ namespace RoundsSettingsMod
             PointsToWin = Config.Bind("General", "PointsToWin", 2, "Очков до победы в раунде (в игре по умолчанию 2)");
             CardsPerRound = Config.Bind("General", "CardsPerRound", 1, "Сколько карт (способностей) выбирает игрок за один выбор (в игре по умолчанию 1)");
             CustomCards = Config.Bind("Cards", "CustomCards", true, "Добавить в игру новые карты мода. Требует перезапуска игры и должно совпадать у всех игроков в онлайне");
+            ShowHp = Config.Bind("General", "ShowHealthNumbers", true, "Показывать здоровье числами над игроками");
             HealthPercent = Config.Bind("General", "HealthPercent", 100, "Максимальное здоровье игроков в процентах от обычного (100 = как в игре)");
             OfferedCards = Config.Bind("General", "OfferedCards", 5, "Сколько карт показывается на выбор (2-9)");
             RerollsPerPick = Config.Bind("General", "RerollsPerPick", 3, "Сколько раз за выбор можно обновить предложенные карты (0 = выключено)");
@@ -267,6 +269,31 @@ namespace RoundsSettingsMod
                 hintStyle = new GUIStyle(GUI.skin.label) { fontSize = 11, wordWrap = true };
             }
 
+            // здоровье числами над игроками
+            if (ShowHp.Value)
+            {
+                try
+                {
+                    var cam = Camera.main; var pm = PlayerManager.instance;
+                    if (cam != null && pm != null && pm.players != null)
+                    {
+                        var hs = new GUIStyle(GUI.skin.label) { fontSize = 16, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+                        foreach (var p in pm.players)
+                        {
+                            if (p == null || p.data == null || p.data.dead) continue;
+                            Vector3 sp = cam.WorldToScreenPoint(p.transform.position + Vector3.up * 2.2f);
+                            if (sp.z < 0) continue;
+                            float cur = Mathf.Max(0f, p.data.health), max = p.data.MaxHealth;
+                            hs.normal.textColor = cur / Mathf.Max(1f, max) < 0.3f ? Color.red : Color.white;
+                            var r = new Rect(sp.x / k - 60, (Screen.height - sp.y) / k - 12, 120, 24);
+                            GUI.Label(new Rect(r.x + 1, r.y + 1, r.width, r.height), Mathf.CeilToInt(cur) + " / " + Mathf.CeilToInt(max), new GUIStyle(hs) { normal = { textColor = Color.black } });
+                            GUI.Label(r, Mathf.CeilToInt(cur) + " / " + Mathf.CeilToInt(max), hs);
+                        }
+                    }
+                }
+                catch (Exception) { }
+            }
+
             // таймер на экране
             if (EffEnabled && EffTime > 0 && wasActive)
             {
@@ -309,6 +336,7 @@ namespace RoundsSettingsMod
                 return;
             }
             Enabled.Value = GUILayout.Toggle(Enabled.Value, " Мод включён");
+            ShowHp.Value = GUILayout.Toggle(ShowHp.Value, " Показывать здоровье числами");
             CustomCards.Value = GUILayout.Toggle(CustomCards.Value, " Новые карты (нужен перезапуск игры)");
             GUILayout.Space(6);
 
