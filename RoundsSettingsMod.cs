@@ -114,9 +114,9 @@ namespace RoundsSettingsMod
         }
         // ---------- тест-режим ----------
         static bool showTest;
-        Vector2 testScroll;
+        Vector2 testScroll, curScroll;
         bool onlyNewCards = true;
-        Rect testWin = new Rect(760, 60, 320, 560);
+        Rect testWin = new Rect(760, 60, 320, 640);
 
         void DrawTestWindow(int id)
         {
@@ -126,9 +126,23 @@ namespace RoundsSettingsMod
             if (GUILayout.Button("Лечить")) TestTools.Heal();
             GUILayout.EndHorizontal();
             if (TestTools.Status.Length > 0) GUILayout.Label(TestTools.Status, hintStyle);
+            GUILayout.BeginHorizontal();
+            if (GUILayout.Button("Отменить последнюю")) TestTools.UndoLast();
+            if (GUILayout.Button("Сбросить все карты")) TestTools.ClearCards();
+            GUILayout.EndHorizontal();
+            var cur = TestTools.Current();
+            GUILayout.Label("Карты игрока (" + cur.Count + "): нажми, чтобы отменить");
+            curScroll = GUILayout.BeginScrollView(curScroll, GUILayout.Height(110));
+            for (int i = 0; i < cur.Count; i++)
+            {
+                string cn;
+                try { var ci0 = cur[i]; cn = ci0.gameObject.name.StartsWith("RS_") ? CardCatalog.ById[ci0.gameObject.name].Name : ci0.CardName; } catch (Exception) { cn = "?"; }
+                if (GUILayout.Button("✕ " + cn)) { TestTools.RemoveAt(i); break; }
+            }
+            GUILayout.EndScrollView();
             onlyNewCards = GUILayout.Toggle(onlyNewCards, " Только новые карты мода");
             GUILayout.Label("Выдать карту сразу:");
-            testScroll = GUILayout.BeginScrollView(testScroll, GUILayout.Height(380));
+            testScroll = GUILayout.BeginScrollView(testScroll, GUILayout.Height(250));
             foreach (var ci in TestTools.AllCards())
             {
                 bool custom = ci.gameObject.name.StartsWith("RS_");

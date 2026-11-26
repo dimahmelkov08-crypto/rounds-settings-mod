@@ -42,7 +42,7 @@ namespace RoundsSettingsMod
         }
 
         // выдать карту сразу
-        public static void GiveCard(CardInfo ci)
+        public static void GiveCard(CardInfo ci, bool quiet = false)
         {
             try
             {
@@ -56,7 +56,7 @@ namespace RoundsSettingsMod
                 var pt = Enum.ToObject(pick.GetParameters()[2].ParameterType, 1);
                 pick.Invoke(acs, new object[] { me.PlayerID, false, pt });
                 cc.StartCoroutine(DestroyLater(go));
-                Status = "Выдана: " + ci.CardName;
+                if (!quiet) Status = "Выдана: " + ci.CardName;
             }
             catch (Exception e) { Status = "Ошибка: " + e.Message; RoundsSettingsPlugin.Warn("TestTools.GiveCard: " + e); }
         }
@@ -65,6 +65,62 @@ namespace RoundsSettingsMod
         {
             yield return new WaitForSecondsRealtime(0.5f);
             if (go != null) RoundsSettingsPlugin.KillCard(go);
+        }
+
+        // ---- отмена выбранных карт ----
+        public static List<CardInfo> Current()
+        {
+            var me = Me();
+            return me == null ? new List<CardInfo>() : new List<CardInfo>(me.data.currentCards);
+        }
+
+        static void ResetAll()
+        {
+            var me = Me();
+            Traverse.Create(me).Method("FullReset").GetValue();
+            me.data.currentCards.Clear();
+            if (CardBarHandler.instance != null) CardBarHandler.instance.ResetCardBards();
+        }
+
+        // оставить только указанные карты (сброс + повторная выдача)
+        static void Rebuild(List<CardInfo> keep)
+        {
+            ResetAll();
+            foreach (var c in keep) GiveCard(c, true);
+            try { Me().data.healthHandler.Heal(999999f); } catch (Exception) { }
+        }
+
+        public static void RemoveAt(int index)
+        {
+            try
+            {
+                if (Me() == null) { Status = "Нет игрока"; return; }
+                var list = Current();
+                if (index < 0 || index >= list.Count) return;
+                list.RemoveAt(index);
+                Rebuild(list);
+                Status = "Карта отменена";
+            }
+            catch (Exception e) { Status = "Ошибка: " + e.Message; RoundsSettingsPlugin.Warn("TestTools.RemoveAt: " + e); }
+        }
+
+        public static void UndoLast()
+        {
+            var n = Current().Count;
+            if (n == 0) { Status = "Нет карт"; return; }
+            RemoveAt(n - 1);
+        }
+
+        public static void ClearCards()
+        {
+            try
+            {
+                if (Me() == null) { Status = "Нет игрока"; return; }
+                ResetAll();
+                try { Me().data.healthHandler.Heal(999999f); } catch (Exception) { }
+                Status = "Все карты сброшены";
+            }
+            catch (Exception e) { Status = "Ошибка: " + e.Message; RoundsSettingsPlugin.Warn("TestTools.ClearCards: " + e); }
         }
 
         public static void Heal()
