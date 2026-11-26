@@ -24,6 +24,7 @@ namespace RoundsSettingsMod
         public static ConfigEntry<int> PointsToWin;   // очков до победы в раунде
         public static ConfigEntry<int> CardsPerRound; // карт за выбор
         public static ConfigEntry<bool> CustomCards; // новые карты (нужен перезапуск, у всех игроков одинаково)
+        public static ConfigEntry<int> HealthPercent; // максимальное здоровье игроков, % от обычного
         public static ConfigEntry<int> OfferedCards; // сколько карт показывается на выбор
         public static ConfigEntry<int> RerollsPerPick; // сколько раз можно обновить предложенные карты
         public static ConfigEntry<KeyCode> RerollKey;
@@ -33,7 +34,7 @@ namespace RoundsSettingsMod
 
         // меню
         bool menuOpen;
-        Rect win = new Rect(40, 60, 380, 530);
+        Rect win = new Rect(40, 60, 380, 580);
         GUIStyle titleStyle, hintStyle;
 
         // таймер
@@ -53,6 +54,7 @@ namespace RoundsSettingsMod
             PointsToWin = Config.Bind("General", "PointsToWin", 2, "Очков до победы в раунде (в игре по умолчанию 2)");
             CardsPerRound = Config.Bind("General", "CardsPerRound", 1, "Сколько карт (способностей) выбирает игрок за один выбор (в игре по умолчанию 1)");
             CustomCards = Config.Bind("Cards", "CustomCards", true, "Добавить в игру новые карты мода. Требует перезапуска игры и должно совпадать у всех игроков в онлайне");
+            HealthPercent = Config.Bind("General", "HealthPercent", 100, "Максимальное здоровье игроков в процентах от обычного (100 = как в игре)");
             OfferedCards = Config.Bind("General", "OfferedCards", 5, "Сколько карт показывается на выбор (2-9)");
             RerollsPerPick = Config.Bind("General", "RerollsPerPick", 3, "Сколько раз за выбор можно обновить предложенные карты (0 = выключено)");
             RerollKey = Config.Bind("General", "RerollKey", KeyCode.R, "Клавиша обновления карт");
@@ -71,7 +73,7 @@ namespace RoundsSettingsMod
         }
 
         // ---------- синхронизация (хост = источник правды) ----------
-        const string K_ON = "rs_on", K_R = "rs_r", K_P = "rs_p", K_T = "rs_t", K_C = "rs_c", K_X = "rs_x", K_O = "rs_o";
+        const string K_ON = "rs_on", K_R = "rs_r", K_P = "rs_p", K_T = "rs_t", K_C = "rs_c", K_X = "rs_x", K_O = "rs_o", K_H = "rs_h";
         public static bool Online { get { return PhotonNetwork.InRoom && !PhotonNetwork.OfflineMode; } }
         public static bool IsClient { get { return Online && !PhotonNetwork.IsMasterClient; } }
 
@@ -84,6 +86,7 @@ namespace RoundsSettingsMod
         public static int EffRounds { get { return IsClient ? Prop(K_R, 2) : RoundsToWin.Value; } }
         public static int EffPoints { get { return IsClient ? Prop(K_P, 2) : PointsToWin.Value; } }
         public static int EffCards { get { return IsClient ? Prop(K_C, 1) : CardsPerRound.Value; } }
+        public static int EffHealth { get { return IsClient ? Prop(K_H, 100) : HealthPercent.Value; } }
         public static int EffOffered { get { return IsClient ? Prop(K_O, 5) : OfferedCards.Value; } }
         public static int EffRerolls { get { return IsClient ? Prop(K_X, 0) : RerollsPerPick.Value; } }
         public static int EffTime { get { return IsClient ? Prop(K_T, 0) : TimeLimit.Value; } }
@@ -93,9 +96,9 @@ namespace RoundsSettingsMod
             if (!Online || !PhotonNetwork.IsMasterClient) return;
             var pr = PhotonNetwork.CurrentRoom.CustomProperties;
             int on = Enabled.Value ? 1 : 0;
-            if (Prop(K_ON, -1) == on && Prop(K_R, -1) == RoundsToWin.Value && Prop(K_P, -1) == PointsToWin.Value && Prop(K_T, -1) == TimeLimit.Value && Prop(K_C, -1) == CardsPerRound.Value && Prop(K_X, -1) == RerollsPerPick.Value && Prop(K_O, -1) == OfferedCards.Value) return;
+            if (Prop(K_ON, -1) == on && Prop(K_R, -1) == RoundsToWin.Value && Prop(K_P, -1) == PointsToWin.Value && Prop(K_T, -1) == TimeLimit.Value && Prop(K_C, -1) == CardsPerRound.Value && Prop(K_X, -1) == RerollsPerPick.Value && Prop(K_O, -1) == OfferedCards.Value && Prop(K_H, -1) == HealthPercent.Value) return;
             var h = new ExitGames.Client.Photon.Hashtable();
-            h[K_ON] = on; h[K_R] = RoundsToWin.Value; h[K_P] = PointsToWin.Value; h[K_T] = TimeLimit.Value; h[K_C] = CardsPerRound.Value; h[K_X] = RerollsPerPick.Value; h[K_O] = OfferedCards.Value;
+            h[K_ON] = on; h[K_R] = RoundsToWin.Value; h[K_P] = PointsToWin.Value; h[K_T] = TimeLimit.Value; h[K_C] = CardsPerRound.Value; h[K_X] = RerollsPerPick.Value; h[K_O] = OfferedCards.Value; h[K_H] = HealthPercent.Value;
             PhotonNetwork.CurrentRoom.SetCustomProperties(h);
         }
 
@@ -298,6 +301,7 @@ namespace RoundsSettingsMod
                 GUILayout.Label("Карт за выбор: " + EffCards);
                 GUILayout.Label("Обновлений карт за выбор: " + EffRerolls);
                 GUILayout.Label("Карт на выбор: " + EffOffered);
+                GUILayout.Label("Здоровье игроков: " + EffHealth + "%");
                 GUILayout.Label("Лимит времени на очко: " + (EffTime == 0 ? "выкл." : EffTime + " сек"));
                 if (GUILayout.Button("Закрыть")) menuOpen = false;
                 GUILayout.EndVertical();
@@ -313,6 +317,7 @@ namespace RoundsSettingsMod
 
             CardsPerRound.Value = IntSlider("Карт (способностей) за выбор", CardsPerRound.Value, 1, 100);
 
+            HealthPercent.Value = IntSlider("Здоровье игроков, %", HealthPercent.Value, 10, 1000);
             OfferedCards.Value = IntSlider("Карт показывается на выбор", OfferedCards.Value, 2, 9);
             RerollsPerPick.Value = IntSlider("Обновлений карт за выбор [" + RerollKey.Value + "]", RerollsPerPick.Value, 0, 20);
 
@@ -354,6 +359,16 @@ namespace RoundsSettingsMod
 
     static class Patches
     {
+        // здоровье: хранимое значение делим на множитель, возвращаемое — умножаем,
+        // чтобы карты (MaxHealth *= x) не накапливали множитель
+        static float HpMult { get { return RoundsSettingsPlugin.EffEnabled ? Mathf.Max(10, RoundsSettingsPlugin.EffHealth) / 100f : 1f; } }
+
+        [HarmonyPatch(typeof(CharacterData), "get_MaxHealth")]
+        [HarmonyPostfix] static void GetMaxHp(ref float __result) { __result *= HpMult; }
+
+        [HarmonyPatch(typeof(CharacterData), "set_MaxHealth")]
+        [HarmonyPrefix] static void SetMaxHp(ref float value) { value /= HpMult; }
+
         [HarmonyPatch(typeof(CardChoice), "StartPick")]
         [HarmonyPrefix] static void StartPickPre(CardChoice __instance)
         {
