@@ -54,23 +54,23 @@ namespace RoundsSettingsMod
             Enabled = Config.Bind("General", "Enabled", true, "Включить мод");
             RoundsToWin = Config.Bind("General", "RoundsToWin", 2, "Раундов до победы в матче (в игре по умолчанию 2)");
             PointsToWin = Config.Bind("General", "PointsToWin", 2, "Очков до победы в раунде (в игре по умолчанию 2)");
-            CardsPerRound = Config.Bind("General", "CardsPerRound", 1, "[ЭКСПЕРИМЕНТАЛЬНО] Сколько карт (способностей) выбирает игрок за один выбор (в игре по умолчанию 1)");
+            CardsPerRound = Config.Bind("General", "CardsPerRound", 2, "[ЭКСПЕРИМЕНТАЛЬНО] Сколько карт (способностей) выбирает игрок за один выбор (в игре по умолчанию 1)");
             CustomCards = Config.Bind("Cards", "CustomCards", true, "Добавить в игру новые карты мода. Требует перезапуска игры и должно совпадать у всех игроков в онлайне");
             ShowHp = Config.Bind("General", "ShowHealthNumbers", true, "Показывать здоровье числами над игроками");
             HmelJump = Config.Bind("Cards", "HmelJumpBonusPercent", 100, "Бонус к высоте прыжка у суперкарты Хмеля, % (100 = прыжок в 2 раза выше)");
             HealthPercent = Config.Bind("General", "HealthPercent", 100, "Максимальное здоровье игроков в процентах от обычного (100 = как в игре)");
             OfferedCards = Config.Bind("General", "OfferedCards", 5, "Сколько карт показывается на выбор (2-9)");
-            RerollsPerPick = Config.Bind("General", "RerollsPerPick", 0, "[ЭКСПЕРИМЕНТАЛЬНО] Сколько раз за выбор можно обновить предложенные карты (0 = выключено)");
+            RerollsPerPick = Config.Bind("General", "RerollsPerPick", 3, "[ЭКСПЕРИМЕНТАЛЬНО] Сколько раз за выбор можно обновить предложенные карты (0 = выключено)");
             RerollKey = Config.Bind("General", "RerollKey", KeyCode.R, "Клавиша обновления карт");
             TimeLimit = Config.Bind("General", "TimeLimitSeconds", 0, "Лимит времени на очко, сек. 0 = выключен");
             MenuKey = Config.Bind("General", "MenuKey", KeyCode.F8, "Клавиша меню");
 
-            // версия настроек: при обновлении сбрасываем экспериментальные параметры на безопасные значения
+            // версия настроек: при обновлении выставляем карты за выбор = 2, реролл = 3
             var ver = Config.Bind("Meta", "SettingsVersion", 0, "Служебный параметр, не менять");
-            if (ver.Value < 2)
+            if (ver.Value < 3)
             {
-                CardsPerRound.Value = 1; RerollsPerPick.Value = 0; OfferedCards.Value = 5;
-                ver.Value = 2; Config.Save();
+                CardsPerRound.Value = 2; RerollsPerPick.Value = 3; OfferedCards.Value = 5;
+                ver.Value = 3; Config.Save();
             }
 
             var hh = new Harmony(GUID); hh.PatchAll(typeof(Patches)); hh.PatchAll(typeof(CardPatches));
