@@ -54,16 +54,24 @@ namespace RoundsSettingsMod
             Enabled = Config.Bind("General", "Enabled", true, "Включить мод");
             RoundsToWin = Config.Bind("General", "RoundsToWin", 2, "Раундов до победы в матче (в игре по умолчанию 2)");
             PointsToWin = Config.Bind("General", "PointsToWin", 2, "Очков до победы в раунде (в игре по умолчанию 2)");
-            CardsPerRound = Config.Bind("General", "CardsPerRound", 1, "Сколько карт (способностей) выбирает игрок за один выбор (в игре по умолчанию 1)");
+            CardsPerRound = Config.Bind("General", "CardsPerRound", 1, "[ЭКСПЕРИМЕНТАЛЬНО] Сколько карт (способностей) выбирает игрок за один выбор (в игре по умолчанию 1)");
             CustomCards = Config.Bind("Cards", "CustomCards", true, "Добавить в игру новые карты мода. Требует перезапуска игры и должно совпадать у всех игроков в онлайне");
             ShowHp = Config.Bind("General", "ShowHealthNumbers", true, "Показывать здоровье числами над игроками");
             HmelJump = Config.Bind("Cards", "HmelJumpBonusPercent", 100, "Бонус к высоте прыжка у суперкарты Хмеля, % (100 = прыжок в 2 раза выше)");
             HealthPercent = Config.Bind("General", "HealthPercent", 100, "Максимальное здоровье игроков в процентах от обычного (100 = как в игре)");
             OfferedCards = Config.Bind("General", "OfferedCards", 5, "Сколько карт показывается на выбор (2-9)");
-            RerollsPerPick = Config.Bind("General", "RerollsPerPick", 3, "Сколько раз за выбор можно обновить предложенные карты (0 = выключено)");
+            RerollsPerPick = Config.Bind("General", "RerollsPerPick", 0, "[ЭКСПЕРИМЕНТАЛЬНО] Сколько раз за выбор можно обновить предложенные карты (0 = выключено)");
             RerollKey = Config.Bind("General", "RerollKey", KeyCode.R, "Клавиша обновления карт");
             TimeLimit = Config.Bind("General", "TimeLimitSeconds", 0, "Лимит времени на очко, сек. 0 = выключен");
             MenuKey = Config.Bind("General", "MenuKey", KeyCode.F8, "Клавиша меню");
+
+            // версия настроек: при обновлении сбрасываем экспериментальные параметры на безопасные значения
+            var ver = Config.Bind("Meta", "SettingsVersion", 0, "Служебный параметр, не менять");
+            if (ver.Value < 2)
+            {
+                CardsPerRound.Value = 1; RerollsPerPick.Value = 0; OfferedCards.Value = 5;
+                ver.Value = 2; Config.Save();
+            }
 
             var hh = new Harmony(GUID); hh.PatchAll(typeof(Patches)); hh.PatchAll(typeof(CardPatches));
             Logger.LogInfo(NAME + " " + VERSION + " loaded. Menu key: " + MenuKey.Value);
@@ -362,11 +370,11 @@ namespace RoundsSettingsMod
             RoundsToWin.Value = IntSlider("Раундов до победы в матче", RoundsToWin.Value, 1, 1000);
             PointsToWin.Value = IntSlider("Очков до победы в раунде", PointsToWin.Value, 1, 1000);
 
-            CardsPerRound.Value = IntSlider("Карт (способностей) за выбор", CardsPerRound.Value, 1, 100);
+            CardsPerRound.Value = IntSlider("[эксперим.] Карт за выбор", CardsPerRound.Value, 1, 100);
 
             HealthPercent.Value = IntSlider("Здоровье игроков, %", HealthPercent.Value, 10, 1000);
             OfferedCards.Value = IntSlider("Карт показывается на выбор", OfferedCards.Value, 2, 9);
-            RerollsPerPick.Value = IntSlider("Обновлений карт за выбор [" + RerollKey.Value + "]", RerollsPerPick.Value, 0, 20);
+            RerollsPerPick.Value = IntSlider("[эксперим.] Обновлений карт [" + RerollKey.Value + "]", RerollsPerPick.Value, 0, 20);
 
             int t = TimeLimit.Value;
             GUILayout.Label("Лимит времени на очко: " + (t == 0 ? "выкл." : t + " сек"));
@@ -415,16 +423,6 @@ namespace RoundsSettingsMod
 
         [HarmonyPatch(typeof(CharacterData), "set_MaxHealth")]
         [HarmonyPrefix] static void SetMaxHp(ref float value) { value /= HpMult; }
-
-        // CardVisuals.Leave по умолчанию уничтожает карту только локально — у второго игрока она оставалась
-        [HarmonyPatch(typeof(CardVisuals), "Leave")]
-        [HarmonyPrefix] static bool LeavePre(CardVisuals __instance)
-        {
-            var root = __instance.transform.root.gameObject;
-            var pv = root.GetComponent<PhotonView>();
-            if (pv != null && PhotonNetwork.InRoom && !PhotonNetwork.OfflineMode && pv.IsMine) { PhotonNetwork.Destroy(root); return false; }
-            return true;
-        }
 
         [HarmonyPatch(typeof(CardChoice), "StartPick")]
         [HarmonyPrefix] static void StartPickPre(CardChoice __instance)
