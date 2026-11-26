@@ -25,7 +25,7 @@ namespace RoundsSettingsMod
         public static ConfigEntry<int> CardsPerRound; // карт за выбор
         public static ConfigEntry<bool> CustomCards; // новые карты (нужен перезапуск, у всех игроков одинаково)
         public static ConfigEntry<bool> ShowHp; // показывать здоровье числами над игроками
-        public static ConfigEntry<string> PinHash; // хэш PIN-кода меню (пусто = без PIN)
+        public static string PinHashMem = ""; // хэш PIN-кода меню: хранится только в памяти, сбрасывается при каждом запуске игры
         public static ConfigEntry<bool> MapFilter; // выбор игровых локаций
         public static ConfigEntry<string> DisabledMaps; // отключённые локации (через ;)
         public static ConfigEntry<bool> RarityCustom; // свои шансы редкости карт
@@ -63,7 +63,6 @@ namespace RoundsSettingsMod
             CardsPerRound = Config.Bind("General", "CardsPerRound", 2, "[ЭКСПЕРИМЕНТАЛЬНО] Сколько карт (способностей) выбирает игрок за один выбор (в игре по умолчанию 1)");
             CustomCards = Config.Bind("Cards", "CustomCards", true, "Добавить в игру новые карты мода. Требует перезапуска игры и должно совпадать у всех игроков в онлайне");
             ShowHp = Config.Bind("General", "ShowHealthNumbers", true, "Показывать здоровье числами над игроками");
-            PinHash = Config.Bind("Security", "PinHash", "", "Хэш PIN-кода меню F8. Не редактируй вручную: PIN задаётся в меню. Пусто = без PIN");
             MapFilter = Config.Bind("Maps", "CustomMapSelection", false, "Играть только на выбранных локациях (иначе — случайные, как в игре). Применяется хостом");
             DisabledMaps = Config.Bind("Maps", "DisabledMaps", "", "Отключённые локации (названия сцен через ;)");
             RarityCustom = Config.Bind("Cards", "CustomRarityChances", false, "Использовать свои шансы редкости карт (иначе — как в игре)");
@@ -94,6 +93,8 @@ namespace RoundsSettingsMod
         void Update()
         {
             if (Input.GetKeyDown(MenuKey.Value)) menuOpen = !menuOpen;
+            string room = PhotonNetwork.InRoom && PhotonNetwork.CurrentRoom != null ? PhotonNetwork.CurrentRoom.Name : "";
+            if (room != lastRoom) { lastRoom = room; unlocked = false; }
             TickRoundTimer();
             TickReroll();
         }
@@ -116,6 +117,7 @@ namespace RoundsSettingsMod
         }
         // ---------- PIN-код меню ----------
         static bool unlocked;
+        string lastRoom = "";
         string pinInput = "", newPin = "", pinMsg = "";
         Rect pinWin = new Rect(40, 60, 260, 130);
 
@@ -137,7 +139,7 @@ namespace RoundsSettingsMod
             GUI.FocusControl("pinfield");
             if (GUILayout.Button("Открыть") || enter)
             {
-                if (Hash(pinInput) == PinHash.Value) { unlocked = true; pinMsg = ""; }
+                if (Hash(pinInput) == RequiredPin) { unlocked = true; pinMsg = ""; }
                 else pinMsg = "Неверный PIN";
                 pinInput = "";
             }
@@ -223,7 +225,7 @@ namespace RoundsSettingsMod
         }
 
         // ---------- синхронизация (хост = источник правды) ----------
-        const string K_ON = "rs_on", K_R = "rs_r", K_P = "rs_p", K_T = "rs_t", K_C = "rs_c", K_X = "rs_x", K_O = "rs_o", K_H = "rs_h";
+        const string K_ON = "rs_on", K_R = "rs_r", K_P = "rs_p", K_T = "rs_t", K_C = "rs_c", K_X = "rs_x", K_O = "rs_o", K_H = "rs_h", K_PIN = "rs_pin";
         public static bool Online { get { return PhotonNetwork.InRoom && !PhotonNetwork.OfflineMode; } }
         public static bool IsClient { get { return Online && !PhotonNetwork.IsMasterClient; } }
 
@@ -232,6 +234,14 @@ namespace RoundsSettingsMod
             var pr = PhotonNetwork.CurrentRoom.CustomProperties;
             return pr.ContainsKey(k) ? Convert.ToInt32(pr[k]) : def;
         }
+        static string PropS(string k)
+        {
+            var pr = PhotonNetwork.CurrentRoom.CustomProperties;
+            return pr.ContainsKey(k) && pr[k] != null ? pr[k].ToString() : "";
+        }
+        // нужный PIN: у клиента — PIN хоста из свойств комнаты, иначе свой
+        public static string RequiredPin { get { return IsClient ? PropS(K_PIN) : PinHashMem; } }
+
         public static bool EffEnabled { get { return IsClient ? Prop(K_ON, 0) == 1 : Enabled.Value; } }
         public static int EffRounds { get { return IsClient ? Prop(K_R, 2) : RoundsToWin.Value; } }
         public static int EffPoints { get { return IsClient ? Prop(K_P, 2) : PointsToWin.Value; } }
@@ -246,9 +256,9 @@ namespace RoundsSettingsMod
             if (!Online || !PhotonNetwork.IsMasterClient) return;
             var pr = PhotonNetwork.CurrentRoom.CustomProperties;
             int on = Enabled.Value ? 1 : 0;
-            if (Prop(K_ON, -1) == on && Prop(K_R, -1) == RoundsToWin.Value && Prop(K_P, -1) == PointsToWin.Value && Prop(K_T, -1) == TimeLimit.Value && Prop(K_C, -1) == CardsPerRound.Value && Prop(K_X, -1) == RerollsPerPick.Value && Prop(K_O, -1) == OfferedCards.Value && Prop(K_H, -1) == HealthPercent.Value) return;
+            if (Prop(K_ON, -1) == on && Prop(K_R, -1) == RoundsToWin.Value && Prop(K_P, -1) == PointsToWin.Value && Prop(K_T, -1) == TimeLimit.Value && Prop(K_C, -1) == CardsPerRound.Value && Prop(K_X, -1) == RerollsPerPick.Value && Prop(K_O, -1) == OfferedCards.Value && Prop(K_H, -1) == HealthPercent.Value && PropS(K_PIN) == PinHashMem) return;
             var h = new ExitGames.Client.Photon.Hashtable();
-            h[K_ON] = on; h[K_R] = RoundsToWin.Value; h[K_P] = PointsToWin.Value; h[K_T] = TimeLimit.Value; h[K_C] = CardsPerRound.Value; h[K_X] = RerollsPerPick.Value; h[K_O] = OfferedCards.Value; h[K_H] = HealthPercent.Value;
+            h[K_ON] = on; h[K_R] = RoundsToWin.Value; h[K_P] = PointsToWin.Value; h[K_T] = TimeLimit.Value; h[K_C] = CardsPerRound.Value; h[K_X] = RerollsPerPick.Value; h[K_O] = OfferedCards.Value; h[K_H] = HealthPercent.Value; h[K_PIN] = PinHashMem;
             PhotonNetwork.CurrentRoom.SetCustomProperties(h);
         }
 
@@ -479,7 +489,7 @@ namespace RoundsSettingsMod
                 if (GUI.Button(new Rect(8, 8, 150, 24), "Раунды [" + MenuKey.Value + "]")) menuOpen = true;
                 return;
             }
-            if (PinHash.Value.Length > 0 && !unlocked)
+            if (RequiredPin.Length > 0 && !unlocked)
             {
                 pinWin = GUI.Window(8844, pinWin, DrawPinWindow, "PIN");
                 return;
@@ -541,10 +551,10 @@ namespace RoundsSettingsMod
 
             GUILayout.Space(4);
             GUILayout.BeginHorizontal();
-            GUILayout.Label(PinHash.Value.Length > 0 ? "PIN задан" : "PIN не задан", GUILayout.Width(90));
+            GUILayout.Label(PinHashMem.Length > 0 ? "PIN задан" : "PIN не задан", GUILayout.Width(90));
             newPin = GUILayout.PasswordField(newPin, '*', 12, GUILayout.Width(90));
-            if (GUILayout.Button("Задать PIN") && newPin.Length > 0) { PinHash.Value = Hash(newPin); unlocked = true; newPin = ""; Config.Save(); }
-            if (GUILayout.Button("Убрать") && PinHash.Value.Length > 0) { PinHash.Value = ""; Config.Save(); }
+            if (GUILayout.Button("Задать PIN") && newPin.Length > 0) { PinHashMem = Hash(newPin); unlocked = true; newPin = ""; }
+            if (GUILayout.Button("Убрать") && PinHashMem.Length > 0) { PinHashMem = ""; }
             GUILayout.EndHorizontal();
             GUILayout.Space(4);
             GUILayout.BeginHorizontal();
