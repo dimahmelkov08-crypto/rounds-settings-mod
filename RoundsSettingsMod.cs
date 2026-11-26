@@ -25,6 +25,8 @@ namespace RoundsSettingsMod
         public static ConfigEntry<int> CardsPerRound; // карт за выбор
         public static ConfigEntry<bool> CustomCards; // новые карты (нужен перезапуск, у всех игроков одинаково)
         public static ConfigEntry<bool> ShowHp; // показывать здоровье числами над игроками
+        public static ConfigEntry<bool> MapFilter; // выбор игровых локаций
+        public static ConfigEntry<string> DisabledMaps; // отключённые локации (через ;)
         public static ConfigEntry<bool> RarityCustom; // свои шансы редкости карт
         public static ConfigEntry<int> RarePercent, UncommonPercent;
         public static ConfigEntry<int> HmelDropPercent; // шанс выпадения карты «Похмелье от Хмеля» на каждый слот, %
@@ -38,7 +40,7 @@ namespace RoundsSettingsMod
 
         // меню
         bool menuOpen;
-        Rect win = new Rect(40, 60, 380, 700);
+        Rect win = new Rect(40, 60, 380, 740);
         GUIStyle titleStyle, hintStyle;
 
         // таймер
@@ -59,10 +61,12 @@ namespace RoundsSettingsMod
             CardsPerRound = Config.Bind("General", "CardsPerRound", 2, "[ЭКСПЕРИМЕНТАЛЬНО] Сколько карт (способностей) выбирает игрок за один выбор (в игре по умолчанию 1)");
             CustomCards = Config.Bind("Cards", "CustomCards", true, "Добавить в игру новые карты мода. Требует перезапуска игры и должно совпадать у всех игроков в онлайне");
             ShowHp = Config.Bind("General", "ShowHealthNumbers", true, "Показывать здоровье числами над игроками");
+            MapFilter = Config.Bind("Maps", "CustomMapSelection", false, "Играть только на выбранных локациях (иначе — случайные, как в игре). Применяется хостом");
+            DisabledMaps = Config.Bind("Maps", "DisabledMaps", "", "Отключённые локации (названия сцен через ;)");
             RarityCustom = Config.Bind("Cards", "CustomRarityChances", false, "Использовать свои шансы редкости карт (иначе — как в игре)");
             RarePercent = Config.Bind("Cards", "RareChancePercent", 10, "Шанс, что предложенная карта редкая, % (0-100)");
             UncommonPercent = Config.Bind("Cards", "UncommonChancePercent", 30, "Шанс, что предложенная карта необычная, % (остальное — обычные)");
-            HmelDropPercent = Config.Bind("Cards", "HmelDropPercent", 20, "Шанс, что очередная предлагаемая карта окажется «Похмельем от Хмеля», % (0 = обычный шанс редкости)");
+            HmelDropPercent = Config.Bind("Cards", "HmelDropPercent", 7, "Шанс, что очередная предлагаемая карта окажется «Похмельем от Хмеля», % (0 = обычный шанс редкости)");
             HealthPercent = Config.Bind("General", "HealthPercent", 100, "Максимальное здоровье игроков в процентах от обычного (100 = как в игре)");
             OfferedCards = Config.Bind("General", "OfferedCards", 5, "Сколько карт показывается на выбор (2-9)");
             RerollsPerPick = Config.Bind("General", "RerollsPerPick", 3, "[ЭКСПЕРИМЕНТАЛЬНО] Сколько раз за выбор можно обновить предложенные карты (0 = выключено)");
@@ -72,10 +76,11 @@ namespace RoundsSettingsMod
 
             // версия настроек: при обновлении выставляем карты за выбор = 2, реролл = 3
             var ver = Config.Bind("Meta", "SettingsVersion", 0, "Служебный параметр, не менять");
-            if (ver.Value < 3)
+            if (ver.Value < 4)
             {
                 CardsPerRound.Value = 2; RerollsPerPick.Value = 3; OfferedCards.Value = 5;
-                ver.Value = 3; Config.Save();
+                HmelDropPercent.Value = 7;
+                ver.Value = 4; Config.Save();
             }
 
             var hh = new Harmony(GUID); hh.PatchAll(typeof(Patches)); hh.PatchAll(typeof(CardPatches));
@@ -87,6 +92,55 @@ namespace RoundsSettingsMod
             if (Input.GetKeyDown(MenuKey.Value)) menuOpen = !menuOpen;
             TickRoundTimer();
             TickReroll();
+        }
+
+        // ---------- выбор локаций ----------
+        public static string[] Levels()
+        {
+            try { return Traverse.Create(MapManager.instance).Field("levels").GetValue<string[]>(); }
+            catch (Exception) { return null; }
+        }
+        public static System.Collections.Generic.HashSet<string> DisabledSet()
+        {
+            var hs = new System.Collections.Generic.HashSet<string>();
+            foreach (var n in DisabledMaps.Value.Split(';')) if (n.Length > 0) hs.Add(n);
+            return hs;
+        }
+        public static void SaveDisabled(System.Collections.Generic.HashSet<string> hs)
+        {
+            DisabledMaps.Value = string.Join(";", new System.Collections.Generic.List<string>(hs).ToArray());
+        }
+        static bool showMaps;
+        Vector2 mapScroll;
+        Rect mapWin = new Rect(440, 60, 300, 520);
+
+        void DrawMapWindow(int id)
+        {
+            var lv = Levels();
+            if (lv == null || lv.Length == 0) { GUILayout.Label("Список локаций пока недоступен."); GUI.DragWindow(); return; }
+            var dis = DisabledSet();
+            GUILayout.Label("Включено: " + (lv.Length - CountIn(lv, dis)) + " из " + lv.Length + (IsClient ? "  (задаёт хост)" : ""), hintStyle);
+            GUILayout.BeginHorizontal();
+            if (GUILayout.Button("Все")) { dis.Clear(); SaveDisabled(dis); }
+            if (GUILayout.Button("Никакие")) { foreach (var n in lv) dis.Add(n); SaveDisabled(dis); }
+            GUILayout.EndHorizontal();
+            mapScroll = GUILayout.BeginScrollView(mapScroll, GUILayout.Height(400));
+            foreach (var n in lv)
+            {
+                GUILayout.BeginHorizontal();
+                bool on = !dis.Contains(n);
+                bool now = GUILayout.Toggle(on, " " + n.Replace('_', ' '));
+                if (now != on) { if (now) dis.Remove(n); else dis.Add(n); SaveDisabled(dis); }
+                if (GUILayout.Button("только", GUILayout.Width(60))) { dis.Clear(); foreach (var m in lv) if (m != n) dis.Add(m); SaveDisabled(dis); }
+                GUILayout.EndHorizontal();
+            }
+            GUILayout.EndScrollView();
+            if (GUILayout.Button("Закрыть")) showMaps = false;
+            GUI.DragWindow(new Rect(0, 0, 10000, 22));
+        }
+        static int CountIn(string[] lv, System.Collections.Generic.HashSet<string> dis)
+        {
+            int c = 0; foreach (var n in lv) if (dis.Contains(n)) c++; return c;
         }
 
         // ---------- синхронизация (хост = источник правды) ----------
@@ -347,6 +401,7 @@ namespace RoundsSettingsMod
                 return;
             }
             win = GUI.Window(8841, win, DrawWindow, "Настройки раундов");
+            if (showMaps) mapWin = GUI.Window(8842, mapWin, DrawMapWindow, "Выбор локаций");
         }
 
         void DrawWindow(int id)
@@ -377,6 +432,10 @@ namespace RoundsSettingsMod
 
             CardsPerRound.Value = IntSlider("[эксперим.] Карт за выбор", CardsPerRound.Value, 1, 100);
 
+            GUILayout.BeginHorizontal();
+            MapFilter.Value = GUILayout.Toggle(MapFilter.Value, " Выбор локаций");
+            if (GUILayout.Button("Список локаций " + (showMaps ? "◂" : "▸"))) showMaps = !showMaps;
+            GUILayout.EndHorizontal();
             RarityCustom.Value = GUILayout.Toggle(RarityCustom.Value, " Свои шансы редкости карт");
             if (RarityCustom.Value)
             {
@@ -435,6 +494,31 @@ namespace RoundsSettingsMod
 
         [HarmonyPatch(typeof(CharacterData), "set_MaxHealth")]
         [HarmonyPrefix] static void SetMaxHp(ref float value) { value /= HpMult; }
+
+        // выбор игровых локаций (карту выбирает хост)
+        [HarmonyPatch(typeof(MapManager), "GetRandomMap")]
+        [HarmonyPrefix] static bool RandomMapPre(MapManager __instance, ref string __result)
+        {
+            try
+            {
+                if (!RoundsSettingsPlugin.MapFilter.Value) return true;
+                var tr = Traverse.Create(__instance);
+                var fm = tr.Field("forceMap").GetValue<string>();
+                if (!string.IsNullOrEmpty(fm)) return true;
+                var lv = tr.Field("levels").GetValue<string[]>();
+                var dis = RoundsSettingsPlugin.DisabledSet();
+                var allowed = new System.Collections.Generic.List<string>();
+                foreach (var n in lv) if (!dis.Contains(n)) allowed.Add(n);
+                if (allowed.Count == 0) return true;
+                int cur = tr.Field("currentLevelID").GetValue<int>();
+                string curName = (cur >= 0 && cur < lv.Length) ? lv[cur] : null;
+                var pool = new System.Collections.Generic.List<string>(allowed);
+                if (pool.Count > 1 && curName != null) pool.Remove(curName);
+                __result = pool[UnityEngine.Random.Range(0, pool.Count)];
+                return false;
+            }
+            catch (Exception) { return true; }
+        }
 
         // свои шансы редкости карт
         [HarmonyPatch(typeof(CardChoice), "GetRandomCard")]
