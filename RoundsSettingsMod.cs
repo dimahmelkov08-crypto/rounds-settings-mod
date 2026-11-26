@@ -25,6 +25,7 @@ namespace RoundsSettingsMod
         public static ConfigEntry<int> CardsPerRound; // карт за выбор
         public static ConfigEntry<bool> CustomCards; // новые карты (нужен перезапуск, у всех игроков одинаково)
         public static ConfigEntry<bool> ShowHp; // показывать здоровье числами над игроками
+        public static ConfigEntry<int> HmelJump; // бонус прыжка суперкарты Хмеля, %
         public static ConfigEntry<int> HealthPercent; // максимальное здоровье игроков, % от обычного
         public static ConfigEntry<int> OfferedCards; // сколько карт показывается на выбор
         public static ConfigEntry<int> RerollsPerPick; // сколько раз можно обновить предложенные карты
@@ -56,6 +57,7 @@ namespace RoundsSettingsMod
             CardsPerRound = Config.Bind("General", "CardsPerRound", 1, "Сколько карт (способностей) выбирает игрок за один выбор (в игре по умолчанию 1)");
             CustomCards = Config.Bind("Cards", "CustomCards", true, "Добавить в игру новые карты мода. Требует перезапуска игры и должно совпадать у всех игроков в онлайне");
             ShowHp = Config.Bind("General", "ShowHealthNumbers", true, "Показывать здоровье числами над игроками");
+            HmelJump = Config.Bind("Cards", "HmelJumpBonusPercent", 100, "Бонус к высоте прыжка у суперкарты Хмеля, % (100 = прыжок в 2 раза выше)");
             HealthPercent = Config.Bind("General", "HealthPercent", 100, "Максимальное здоровье игроков в процентах от обычного (100 = как в игре)");
             OfferedCards = Config.Bind("General", "OfferedCards", 5, "Сколько карт показывается на выбор (2-9)");
             RerollsPerPick = Config.Bind("General", "RerollsPerPick", 3, "Сколько раз за выбор можно обновить предложенные карты (0 = выключено)");
@@ -405,12 +407,35 @@ namespace RoundsSettingsMod
             catch (Exception e) { RoundsSettingsPlugin.Warn("ResizeSlots: " + e); }
         }
 
-        // сколько карт выбирает игрок за один выбор (старт игры и после каждого раунда)
+        // сколько карт выбирает игрок за один выбор: подряд запускаем обычный выбор N раз
+        static bool inMulti;
+
         [HarmonyPatch(typeof(CardChoice), "DoPick")]
-        [HarmonyPrefix] static void DoPickPre(ref int picksToSet)
+        [HarmonyPrefix] static bool DoPickPre(CardChoice __instance, object[] __args, ref System.Collections.IEnumerator __result)
         {
             RoundsSettingsPlugin.RerollsLeft = RoundsSettingsPlugin.EffEnabled ? RoundsSettingsPlugin.EffRerolls : 0;
-            if (RoundsSettingsPlugin.EffEnabled && picksToSet >= 1) picksToSet = Mathf.Max(1, RoundsSettingsPlugin.EffCards);
+            int n = RoundsSettingsPlugin.EffEnabled ? Mathf.Clamp(RoundsSettingsPlugin.EffCards, 1, 100) : 1;
+            if (inMulti || n <= 1) return true;
+            __result = MultiPick(__instance, __args, n);
+            return false;
+        }
+
+        static System.Collections.IEnumerator MultiPick(CardChoice cc, object[] args, int n)
+        {
+            var m = typeof(CardChoice).GetMethod("DoPick");
+            for (int k = 0; k < n; k++)
+            {
+                if (k > 0)
+                {
+                    try { typeof(CardChoiceVisuals).GetMethod("Show").Invoke(CardChoiceVisuals.instance, new object[] { args[1], true }); }
+                    catch (Exception) { }
+                }
+                System.Collections.IEnumerator it;
+                inMulti = true;
+                try { it = (System.Collections.IEnumerator)m.Invoke(cc, new object[] { 1, args[1], args[2] }); }
+                finally { inMulti = false; }
+                while (it.MoveNext()) yield return it.Current;
+            }
         }
 
         [HarmonyPatch(typeof(GM_ArmsRace), "OnEnable")]
