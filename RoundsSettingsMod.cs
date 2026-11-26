@@ -25,6 +25,8 @@ namespace RoundsSettingsMod
         public static ConfigEntry<int> CardsPerRound; // карт за выбор
         public static ConfigEntry<bool> CustomCards; // новые карты (нужен перезапуск, у всех игроков одинаково)
         public static ConfigEntry<bool> ShowHp; // показывать здоровье числами над игроками
+        public static ConfigEntry<bool> RarityCustom; // свои шансы редкости карт
+        public static ConfigEntry<int> RarePercent, UncommonPercent;
         public static ConfigEntry<int> HmelDropPercent; // шанс выпадения карты «Похмелье от Хмеля» на каждый слот, %
         public static ConfigEntry<int> HealthPercent; // максимальное здоровье игроков, % от обычного
         public static ConfigEntry<int> OfferedCards; // сколько карт показывается на выбор
@@ -36,7 +38,7 @@ namespace RoundsSettingsMod
 
         // меню
         bool menuOpen;
-        Rect win = new Rect(40, 60, 380, 610);
+        Rect win = new Rect(40, 60, 380, 700);
         GUIStyle titleStyle, hintStyle;
 
         // таймер
@@ -57,6 +59,9 @@ namespace RoundsSettingsMod
             CardsPerRound = Config.Bind("General", "CardsPerRound", 2, "[ЭКСПЕРИМЕНТАЛЬНО] Сколько карт (способностей) выбирает игрок за один выбор (в игре по умолчанию 1)");
             CustomCards = Config.Bind("Cards", "CustomCards", true, "Добавить в игру новые карты мода. Требует перезапуска игры и должно совпадать у всех игроков в онлайне");
             ShowHp = Config.Bind("General", "ShowHealthNumbers", true, "Показывать здоровье числами над игроками");
+            RarityCustom = Config.Bind("Cards", "CustomRarityChances", false, "Использовать свои шансы редкости карт (иначе — как в игре)");
+            RarePercent = Config.Bind("Cards", "RareChancePercent", 10, "Шанс, что предложенная карта редкая, % (0-100)");
+            UncommonPercent = Config.Bind("Cards", "UncommonChancePercent", 30, "Шанс, что предложенная карта необычная, % (остальное — обычные)");
             HmelDropPercent = Config.Bind("Cards", "HmelDropPercent", 20, "Шанс, что очередная предлагаемая карта окажется «Похмельем от Хмеля», % (0 = обычный шанс редкости)");
             HealthPercent = Config.Bind("General", "HealthPercent", 100, "Максимальное здоровье игроков в процентах от обычного (100 = как в игре)");
             OfferedCards = Config.Bind("General", "OfferedCards", 5, "Сколько карт показывается на выбор (2-9)");
@@ -372,6 +377,13 @@ namespace RoundsSettingsMod
 
             CardsPerRound.Value = IntSlider("[эксперим.] Карт за выбор", CardsPerRound.Value, 1, 100);
 
+            RarityCustom.Value = GUILayout.Toggle(RarityCustom.Value, " Свои шансы редкости карт");
+            if (RarityCustom.Value)
+            {
+                RarePercent.Value = IntSlider("Шанс редкой карты, %", RarePercent.Value, 0, 100);
+                UncommonPercent.Value = IntSlider("Шанс необычной карты, %", UncommonPercent.Value, 0, 100);
+                GUILayout.Label("Обычные: " + Mathf.Max(0, 100 - RarePercent.Value - UncommonPercent.Value) + "%", hintStyle);
+            }
             HealthPercent.Value = IntSlider("Здоровье игроков, %", HealthPercent.Value, 10, 1000);
             OfferedCards.Value = IntSlider("Карт показывается на выбор", OfferedCards.Value, 2, 9);
             RerollsPerPick.Value = IntSlider("[эксперим.] Обновлений карт [" + RerollKey.Value + "]", RerollsPerPick.Value, 0, 20);
@@ -423,6 +435,28 @@ namespace RoundsSettingsMod
 
         [HarmonyPatch(typeof(CharacterData), "set_MaxHealth")]
         [HarmonyPrefix] static void SetMaxHp(ref float value) { value /= HpMult; }
+
+        // свои шансы редкости карт
+        [HarmonyPatch(typeof(CardChoice), "GetRandomCard")]
+        [HarmonyPrefix] static bool RandomCardPre(CardChoice __instance, ref GameObject __result)
+        {
+            try
+            {
+                if (!RoundsSettingsPlugin.RarityCustom.Value) return true;
+                float rare = Mathf.Max(0, RoundsSettingsPlugin.RarePercent.Value);
+                float unc = Mathf.Max(0, RoundsSettingsPlugin.UncommonPercent.Value);
+                float com = Mathf.Max(0, 100f - rare - unc);
+                float total = rare + unc + com; if (total <= 0f) return true;
+                float r = UnityEngine.Random.value * total;
+                string want = r < rare ? "Rare" : (r < rare + unc ? "Uncommon" : "Common");
+                var pool = new System.Collections.Generic.List<GameObject>();
+                foreach (var c in __instance.cards) if (c.rarity.ToString() == want) pool.Add(c.gameObject);
+                if (pool.Count == 0) return true;
+                __result = pool[UnityEngine.Random.Range(0, pool.Count)];
+                return false;
+            }
+            catch (Exception) { return true; }
+        }
 
         [HarmonyPatch(typeof(CardChoice), "StartPick")]
         [HarmonyPrefix] static void StartPickPre(CardChoice __instance)
