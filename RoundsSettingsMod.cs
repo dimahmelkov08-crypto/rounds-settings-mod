@@ -281,6 +281,7 @@ namespace RoundsSettingsMod
                         foreach (var p in pm.players)
                         {
                             if (p == null || p.data == null || p.data.dead) continue;
+                            if (Online && !p.data.view.IsMine) continue; // в онлайне — только своё здоровье
                             Vector3 sp = cam.WorldToScreenPoint(p.transform.position + Vector3.up * 2.2f);
                             if (sp.z < 0) continue;
                             float cur = Mathf.Max(0f, p.data.health), max = p.data.MaxHealth;
