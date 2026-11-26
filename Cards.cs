@@ -234,18 +234,24 @@ namespace RoundsSettingsMod
 
     static class CardPatches
     {
-        // повышенный шанс выпадения «Похмелья от Хмеля»
+        // повышенный шанс выпадения особых карт («Похмелье от Хмеля», «Водичка от Dodomaks»)
         [HarmonyPatch(typeof(CardChoice), "GetRandomCard")]
         [HarmonyPostfix] static void RandomCardPost(CardChoice __instance, ref GameObject __result)
         {
             try
             {
-                int chance = RoundsSettingsPlugin.HmelDropPercent.Value;
-                if (chance <= 0 || !RoundsSettingsPlugin.CustomCards.Value || UnityEngine.Random.value * 100f >= chance) return;
-                foreach (var c in __instance.cards)
-                    if (c.gameObject.name == "RS_hmel") { __result = c.gameObject; return; }
+                if (!RoundsSettingsPlugin.CustomCards.Value) return;
+                TryBoost(__instance, "RS_hmel", RoundsSettingsPlugin.HmelDropPercent.Value, ref __result);
+                TryBoost(__instance, "RS_water", RoundsSettingsPlugin.WaterDropPercent.Value, ref __result);
             }
             catch (Exception) { }
+        }
+
+        static void TryBoost(CardChoice cc, string id, int chance, ref GameObject result)
+        {
+            if (chance <= 0 || UnityEngine.Random.value * 100f >= chance) return;
+            foreach (var c in cc.cards)
+                if (c.gameObject.name == id) { result = c.gameObject; return; }
         }
 
         [HarmonyPatch(typeof(CardChoice), "Start")]

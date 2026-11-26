@@ -29,6 +29,7 @@ namespace RoundsSettingsMod
         public static ConfigEntry<string> DisabledMaps; // отключённые локации (через ;)
         public static ConfigEntry<bool> RarityCustom; // свои шансы редкости карт
         public static ConfigEntry<int> RarePercent, UncommonPercent;
+        public static ConfigEntry<int> WaterDropPercent; // шанс выпадения «Водички от Dodomaks» на слот, %
         public static ConfigEntry<int> HmelDropPercent; // шанс выпадения карты «Похмелье от Хмеля» на каждый слот, %
         public static ConfigEntry<int> HealthPercent; // максимальное здоровье игроков, % от обычного
         public static ConfigEntry<int> OfferedCards; // сколько карт показывается на выбор
@@ -66,6 +67,7 @@ namespace RoundsSettingsMod
             RarityCustom = Config.Bind("Cards", "CustomRarityChances", false, "Использовать свои шансы редкости карт (иначе — как в игре)");
             RarePercent = Config.Bind("Cards", "RareChancePercent", 10, "Шанс, что предложенная карта редкая, % (0-100)");
             UncommonPercent = Config.Bind("Cards", "UncommonChancePercent", 30, "Шанс, что предложенная карта необычная, % (остальное — обычные)");
+            WaterDropPercent = Config.Bind("Cards", "WaterDropPercent", 7, "Шанс, что очередная предлагаемая карта окажется «Водичкой от Dodomaks», % (0 = обычный шанс редкости)");
             HmelDropPercent = Config.Bind("Cards", "HmelDropPercent", 7, "Шанс, что очередная предлагаемая карта окажется «Похмельем от Хмеля», % (0 = обычный шанс редкости)");
             HealthPercent = Config.Bind("General", "HealthPercent", 100, "Максимальное здоровье игроков в процентах от обычного (100 = как в игре)");
             OfferedCards = Config.Bind("General", "OfferedCards", 5, "Сколько карт показывается на выбор (2-9)");
