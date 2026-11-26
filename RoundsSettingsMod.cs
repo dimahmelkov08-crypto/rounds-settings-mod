@@ -25,6 +25,7 @@ namespace RoundsSettingsMod
         public static ConfigEntry<int> CardsPerRound; // карт за выбор
         public static ConfigEntry<bool> CustomCards; // новые карты (нужен перезапуск, у всех игроков одинаково)
         public static ConfigEntry<bool> ShowHp; // показывать здоровье числами над игроками
+        public static ConfigEntry<string> PinHash; // хэш PIN-кода меню (пусто = без PIN)
         public static ConfigEntry<bool> MapFilter; // выбор игровых локаций
         public static ConfigEntry<string> DisabledMaps; // отключённые локации (через ;)
         public static ConfigEntry<bool> RarityCustom; // свои шансы редкости карт
@@ -41,7 +42,7 @@ namespace RoundsSettingsMod
 
         // меню
         bool menuOpen;
-        Rect win = new Rect(40, 60, 380, 780);
+        Rect win = new Rect(40, 60, 380, 820);
         GUIStyle titleStyle, hintStyle;
 
         // таймер
@@ -62,6 +63,7 @@ namespace RoundsSettingsMod
             CardsPerRound = Config.Bind("General", "CardsPerRound", 2, "[ЭКСПЕРИМЕНТАЛЬНО] Сколько карт (способностей) выбирает игрок за один выбор (в игре по умолчанию 1)");
             CustomCards = Config.Bind("Cards", "CustomCards", true, "Добавить в игру новые карты мода. Требует перезапуска игры и должно совпадать у всех игроков в онлайне");
             ShowHp = Config.Bind("General", "ShowHealthNumbers", true, "Показывать здоровье числами над игроками");
+            PinHash = Config.Bind("Security", "PinHash", "", "Хэш PIN-кода меню F8. Не редактируй вручную: PIN задаётся в меню. Пусто = без PIN");
             MapFilter = Config.Bind("Maps", "CustomMapSelection", false, "Играть только на выбранных локациях (иначе — случайные, как в игре). Применяется хостом");
             DisabledMaps = Config.Bind("Maps", "DisabledMaps", "", "Отключённые локации (названия сцен через ;)");
             RarityCustom = Config.Bind("Cards", "CustomRarityChances", false, "Использовать свои шансы редкости карт (иначе — как в игре)");
@@ -112,6 +114,37 @@ namespace RoundsSettingsMod
         {
             DisabledMaps.Value = string.Join(";", new System.Collections.Generic.List<string>(hs).ToArray());
         }
+        // ---------- PIN-код меню ----------
+        static bool unlocked;
+        string pinInput = "", newPin = "", pinMsg = "";
+        Rect pinWin = new Rect(40, 60, 260, 130);
+
+        static string Hash(string pin)
+        {
+            using (var sha = System.Security.Cryptography.SHA256.Create())
+            {
+                var b = sha.ComputeHash(System.Text.Encoding.UTF8.GetBytes("rs-menu|" + pin));
+                return BitConverter.ToString(b).Replace("-", "");
+            }
+        }
+
+        void DrawPinWindow(int id)
+        {
+            GUILayout.Label("Меню защищено PIN-кодом");
+            bool enter = Event.current.type == EventType.KeyDown && (Event.current.keyCode == KeyCode.Return || Event.current.keyCode == KeyCode.KeypadEnter);
+            GUI.SetNextControlName("pinfield");
+            pinInput = GUILayout.PasswordField(pinInput, '*', 12);
+            GUI.FocusControl("pinfield");
+            if (GUILayout.Button("Открыть") || enter)
+            {
+                if (Hash(pinInput) == PinHash.Value) { unlocked = true; pinMsg = ""; }
+                else pinMsg = "Неверный PIN";
+                pinInput = "";
+            }
+            if (pinMsg.Length > 0) GUILayout.Label(pinMsg);
+            GUI.DragWindow(new Rect(0, 0, 10000, 22));
+        }
+
         // ---------- тест-режим ----------
         static bool showTest;
         Vector2 testScroll, curScroll;
@@ -446,6 +479,11 @@ namespace RoundsSettingsMod
                 if (GUI.Button(new Rect(8, 8, 150, 24), "Раунды [" + MenuKey.Value + "]")) menuOpen = true;
                 return;
             }
+            if (PinHash.Value.Length > 0 && !unlocked)
+            {
+                pinWin = GUI.Window(8844, pinWin, DrawPinWindow, "PIN");
+                return;
+            }
             win = GUI.Window(8841, win, DrawWindow, "Настройки раундов");
             if (showMaps) mapWin = GUI.Window(8842, mapWin, DrawMapWindow, "Выбор локаций");
             if (showTest) testWin = GUI.Window(8843, testWin, DrawTestWindow, "Тест-режим (одному)");
@@ -501,7 +539,14 @@ namespace RoundsSettingsMod
             TimeLimit.Value = t;
             GUILayout.Label("По истечении времени умирает игрок с меньшим HP (при равенстве — случайный).", hintStyle);
 
-            GUILayout.Space(8);
+            GUILayout.Space(4);
+            GUILayout.BeginHorizontal();
+            GUILayout.Label(PinHash.Value.Length > 0 ? "PIN задан" : "PIN не задан", GUILayout.Width(90));
+            newPin = GUILayout.PasswordField(newPin, '*', 12, GUILayout.Width(90));
+            if (GUILayout.Button("Задать PIN") && newPin.Length > 0) { PinHash.Value = Hash(newPin); unlocked = true; newPin = ""; Config.Save(); }
+            if (GUILayout.Button("Убрать") && PinHash.Value.Length > 0) { PinHash.Value = ""; Config.Save(); }
+            GUILayout.EndHorizontal();
+            GUILayout.Space(4);
             GUILayout.BeginHorizontal();
             if (GUILayout.Button("Стандарт (2/2)")) { RoundsToWin.Value = 2; PointsToWin.Value = 2; CardsPerRound.Value = 1; TimeLimit.Value = 0; }
             if (GUILayout.Button("Быстро (1/1, 30с)")) { RoundsToWin.Value = 1; PointsToWin.Value = 1; CardsPerRound.Value = 1; TimeLimit.Value = 30; }
