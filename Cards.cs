@@ -104,7 +104,7 @@ namespace RoundsSettingsMod
             C(104, "jumper", "Прыгун", "Прыгаешь очень высоко, бегаешь медленнее", Common, Jump(1.5f), Speed(0.85f));
             C(115, "brake", "Тормоз", "Попадания замедляют цель, пули медленнее", Common, Slow(0.2f), BSpeed(0.8f));
             // --- дополнительные карты по тем же идеям ---
-            C(0, "hmel", "Похмелье от Хмеля", "С утра летаешь выше и бьёшь сильнее, но руки трясутся", Rare, Jump(2f), Dmg(6f), Spread(11f));
+            C(0, "hmel", "Похмелье от Хмеля", "С утра бьёшь в разы сильнее, но руки трясутся", Common, Dmg(6f), Spread(11f));
             C(0, "wideburst", "Веер", "Больше пуль веером, слабее каждая", Unc, Bullets(2), Dmg(0.75f), Spread(1.4f));
             C(0, "longmag", "Длинный магазин", "Больше патронов, медленнее перезарядка", Common, Ammo(4), Reload(1.4f));
             C(0, "quickhands", "Быстрые руки", "Быстрая перезарядка, меньше урона", Common, Reload(0.6f), Dmg(0.85f));
@@ -179,13 +179,6 @@ namespace RoundsSettingsMod
                         if (f == null) { RoundsSettingsPlugin.Warn("Cards: no field " + e.Field); continue; }
                         if (f.FieldType == typeof(int)) f.SetValue(target, (int)e.Value); else f.SetValue(target, e.Value);
                     }
-                    if (def.Id == "RS_hmel")
-                    {
-                        float v = 1f + RoundsSettingsPlugin.HmelJump.Value / 100f;
-                        pl.jump = v;
-                        stats[0].amount = "+" + RoundsSettingsPlugin.HmelJump.Value + "%";
-                        def.Effs[0].Amount = stats[0].amount; def.Effs[0].Value = v;
-                    }
                     list.Add(ci);
                     ok++;
                 }
@@ -240,6 +233,20 @@ namespace RoundsSettingsMod
 
     static class CardPatches
     {
+        // повышенный шанс выпадения «Похмелья от Хмеля»
+        [HarmonyPatch(typeof(CardChoice), "GetRandomCard")]
+        [HarmonyPostfix] static void RandomCardPost(CardChoice __instance, ref GameObject __result)
+        {
+            try
+            {
+                int chance = RoundsSettingsPlugin.HmelDropPercent.Value;
+                if (chance <= 0 || !RoundsSettingsPlugin.CustomCards.Value || UnityEngine.Random.value * 100f >= chance) return;
+                foreach (var c in __instance.cards)
+                    if (c.gameObject.name == "RS_hmel") { __result = c.gameObject; return; }
+            }
+            catch (Exception) { }
+        }
+
         [HarmonyPatch(typeof(CardChoice), "Start")]
         [HarmonyPrefix] static void CardChoiceStartPre(CardChoice __instance)
         {

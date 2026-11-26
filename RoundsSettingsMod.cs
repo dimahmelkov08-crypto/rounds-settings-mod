@@ -25,7 +25,7 @@ namespace RoundsSettingsMod
         public static ConfigEntry<int> CardsPerRound; // карт за выбор
         public static ConfigEntry<bool> CustomCards; // новые карты (нужен перезапуск, у всех игроков одинаково)
         public static ConfigEntry<bool> ShowHp; // показывать здоровье числами над игроками
-        public static ConfigEntry<int> HmelJump; // бонус прыжка суперкарты Хмеля, %
+        public static ConfigEntry<int> HmelDropPercent; // шанс выпадения карты «Похмелье от Хмеля» на каждый слот, %
         public static ConfigEntry<int> HealthPercent; // максимальное здоровье игроков, % от обычного
         public static ConfigEntry<int> OfferedCards; // сколько карт показывается на выбор
         public static ConfigEntry<int> RerollsPerPick; // сколько раз можно обновить предложенные карты
@@ -57,7 +57,7 @@ namespace RoundsSettingsMod
             CardsPerRound = Config.Bind("General", "CardsPerRound", 2, "[ЭКСПЕРИМЕНТАЛЬНО] Сколько карт (способностей) выбирает игрок за один выбор (в игре по умолчанию 1)");
             CustomCards = Config.Bind("Cards", "CustomCards", true, "Добавить в игру новые карты мода. Требует перезапуска игры и должно совпадать у всех игроков в онлайне");
             ShowHp = Config.Bind("General", "ShowHealthNumbers", true, "Показывать здоровье числами над игроками");
-            HmelJump = Config.Bind("Cards", "HmelJumpBonusPercent", 100, "Бонус к высоте прыжка у суперкарты Хмеля, % (100 = прыжок в 2 раза выше)");
+            HmelDropPercent = Config.Bind("Cards", "HmelDropPercent", 20, "Шанс, что очередная предлагаемая карта окажется «Похмельем от Хмеля», % (0 = обычный шанс редкости)");
             HealthPercent = Config.Bind("General", "HealthPercent", 100, "Максимальное здоровье игроков в процентах от обычного (100 = как в игре)");
             OfferedCards = Config.Bind("General", "OfferedCards", 5, "Сколько карт показывается на выбор (2-9)");
             RerollsPerPick = Config.Bind("General", "RerollsPerPick", 3, "[ЭКСПЕРИМЕНТАЛЬНО] Сколько раз за выбор можно обновить предложенные карты (0 = выключено)");
