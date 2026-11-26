@@ -95,6 +95,16 @@ namespace RoundsSettingsMod
             if (Input.GetKeyDown(MenuKey.Value)) menuOpen = !menuOpen;
             string room = PhotonNetwork.InRoom && PhotonNetwork.CurrentRoom != null ? PhotonNetwork.CurrentRoom.Name : "";
             if (room != lastRoom) { lastRoom = room; unlocked = false; }
+            if (menuOpen && RequiredPin.Length > 0 && !unlocked)
+            {
+                bool en; pinInput = KeyboardDigits(pinInput, out en);
+                if (en) TryUnlock();
+            }
+            else if (menuOpen && showSetPin)
+            {
+                bool en; newPin = KeyboardDigits(newPin, out en);
+                if (en && newPin.Length > 0) { PinHashMem = Hash(newPin); unlocked = true; newPin = ""; showSetPin = false; }
+            }
             TickRoundTimer();
             TickReroll();
         }
@@ -130,20 +140,70 @@ namespace RoundsSettingsMod
             }
         }
 
+        static bool showSetPin;
+        Rect setPinWin = new Rect(320, 60, 240, 260);
+
+        // экранная цифровая клавиатура: текстовые поля IMGUI в этой игре не получают ввод
+        static string Keypad(string cur)
+        {
+            string[] keys = { "1", "2", "3", "4", "5", "6", "7", "8", "9", "C", "0", "<" };
+            for (int r = 0; r < 4; r++)
+            {
+                GUILayout.BeginHorizontal();
+                for (int c = 0; c < 3; c++)
+                {
+                    string k = keys[r * 3 + c];
+                    if (GUILayout.Button(k, GUILayout.Height(28)))
+                    {
+                        if (k == "C") cur = "";
+                        else if (k == "<") { if (cur.Length > 0) cur = cur.Substring(0, cur.Length - 1); }
+                        else if (cur.Length < 12) cur += k;
+                    }
+                }
+                GUILayout.EndHorizontal();
+            }
+            return cur;
+        }
+
+        // ввод цифр с обычной клавиатуры (через Input.inputString)
+        static string KeyboardDigits(string cur, out bool enter)
+        {
+            enter = false;
+            foreach (char ch in Input.inputString)
+            {
+                if (ch >= '0' && ch <= '9' && cur.Length < 12) cur += ch;
+                else if (ch == (char)8 && cur.Length > 0) cur = cur.Substring(0, cur.Length - 1);
+                else if (ch == (char)10 || ch == (char)13) enter = true;
+            }
+            return cur;
+        }
+
+        void TryUnlock()
+        {
+            if (Hash(pinInput) == RequiredPin) { unlocked = true; pinMsg = ""; }
+            else pinMsg = "Неверный PIN";
+            pinInput = "";
+        }
+
         void DrawPinWindow(int id)
         {
             GUILayout.Label("Меню защищено PIN-кодом");
-            bool enter = Event.current.type == EventType.KeyDown && (Event.current.keyCode == KeyCode.Return || Event.current.keyCode == KeyCode.KeypadEnter);
-            GUI.SetNextControlName("pinfield");
-            pinInput = GUILayout.PasswordField(pinInput, '*', 12);
-            GUI.FocusControl("pinfield");
-            if (GUILayout.Button("Открыть") || enter)
-            {
-                if (Hash(pinInput) == RequiredPin) { unlocked = true; pinMsg = ""; }
-                else pinMsg = "Неверный PIN";
-                pinInput = "";
-            }
+            GUILayout.Label(pinInput.Length == 0 ? "—" : new string('*', pinInput.Length), titleStyle);
+            pinInput = Keypad(pinInput);
+            if (GUILayout.Button("Открыть")) TryUnlock();
             if (pinMsg.Length > 0) GUILayout.Label(pinMsg);
+            GUI.DragWindow(new Rect(0, 0, 10000, 22));
+        }
+
+        void DrawSetPinWindow(int id)
+        {
+            GUILayout.Label("Новый PIN (только цифры)");
+            GUILayout.Label(newPin.Length == 0 ? "—" : new string('*', newPin.Length), titleStyle);
+            newPin = Keypad(newPin);
+            GUILayout.BeginHorizontal();
+            if (GUILayout.Button("Сохранить") && newPin.Length > 0) { PinHashMem = Hash(newPin); unlocked = true; newPin = ""; showSetPin = false; }
+            if (GUILayout.Button("Отмена")) { newPin = ""; showSetPin = false; }
+            GUILayout.EndHorizontal();
             GUI.DragWindow(new Rect(0, 0, 10000, 22));
         }
 
@@ -151,7 +211,7 @@ namespace RoundsSettingsMod
         static bool showTest;
         Vector2 testScroll, curScroll;
         bool onlyNewCards = true;
-        Rect testWin = new Rect(760, 60, 320, 640);
+        Rect testWin = new Rect(760, 60, 320, 720);
 
         void DrawTestWindow(int id)
         {
@@ -160,6 +220,19 @@ namespace RoundsSettingsMod
             if (GUILayout.Button("Выбор карты (как в раунде)")) TestTools.StartPick();
             if (GUILayout.Button("Лечить")) TestTools.Heal();
             GUILayout.EndHorizontal();
+            if (GUILayout.Button("Добавить лёгкого бота")) TestTools.AddEasyBot();
+            if (!TestTools.AchConfirm)
+            {
+                if (GUILayout.Button("Открыть все достижения Steam")) TestTools.AchConfirm = true;
+            }
+            else
+            {
+                GUILayout.Label("Достижения появятся в твоём профиле Steam, откатить это нельзя. Точно?", hintStyle);
+                GUILayout.BeginHorizontal();
+                if (GUILayout.Button("Да, открыть")) { TestTools.UnlockAllAchievements(); TestTools.AchConfirm = false; }
+                if (GUILayout.Button("Отмена")) TestTools.AchConfirm = false;
+                GUILayout.EndHorizontal();
+            }
             if (TestTools.Status.Length > 0) GUILayout.Label(TestTools.Status, hintStyle);
             GUILayout.BeginHorizontal();
             if (GUILayout.Button("Отменить последнюю")) TestTools.UndoLast();
@@ -171,13 +244,13 @@ namespace RoundsSettingsMod
             for (int i = 0; i < cur.Count; i++)
             {
                 string cn;
-                try { var ci0 = cur[i]; cn = ci0.gameObject.name.StartsWith("RS_") ? CardCatalog.ById[ci0.gameObject.name].Name : ci0.CardName; } catch (Exception) { cn = "?"; }
+                try { var ci0 = cur[i]; cn = ci0.gameObject.name.StartsWith("RS_") ? CardCatalog.ById[ci0.gameObject.name.Replace("(Clone)", "").Trim()].Name : ci0.CardName; } catch (Exception) { cn = "?"; }
                 if (GUILayout.Button("✕ " + cn)) { TestTools.RemoveAt(i); break; }
             }
             GUILayout.EndScrollView();
             onlyNewCards = GUILayout.Toggle(onlyNewCards, " Только новые карты мода");
             GUILayout.Label("Выдать карту сразу:");
-            testScroll = GUILayout.BeginScrollView(testScroll, GUILayout.Height(250));
+            testScroll = GUILayout.BeginScrollView(testScroll, GUILayout.Height(200));
             foreach (var ci in TestTools.AllCards())
             {
                 bool custom = ci.gameObject.name.StartsWith("RS_");
@@ -495,6 +568,7 @@ namespace RoundsSettingsMod
                 return;
             }
             win = GUI.Window(8841, win, DrawWindow, "Настройки раундов");
+            if (showSetPin) setPinWin = GUI.Window(8845, setPinWin, DrawSetPinWindow, "Новый PIN");
             if (showMaps) mapWin = GUI.Window(8842, mapWin, DrawMapWindow, "Выбор локаций");
             if (showTest) testWin = GUI.Window(8843, testWin, DrawTestWindow, "Тест-режим (одному)");
         }
@@ -551,9 +625,8 @@ namespace RoundsSettingsMod
 
             GUILayout.Space(4);
             GUILayout.BeginHorizontal();
-            GUILayout.Label(PinHashMem.Length > 0 ? "PIN задан" : "PIN не задан", GUILayout.Width(90));
-            newPin = GUILayout.PasswordField(newPin, '*', 12, GUILayout.Width(90));
-            if (GUILayout.Button("Задать PIN") && newPin.Length > 0) { PinHashMem = Hash(newPin); unlocked = true; newPin = ""; }
+            GUILayout.Label(PinHashMem.Length > 0 ? "PIN задан" : "PIN не задан", GUILayout.Width(110));
+            if (GUILayout.Button("Задать PIN")) { showSetPin = true; newPin = ""; }
             if (GUILayout.Button("Убрать") && PinHashMem.Length > 0) { PinHashMem = ""; }
             GUILayout.EndHorizontal();
             GUILayout.Space(4);

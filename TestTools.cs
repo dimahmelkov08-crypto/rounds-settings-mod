@@ -123,6 +123,51 @@ namespace RoundsSettingsMod
             catch (Exception e) { Status = "Ошибка: " + e.Message; RoundsSettingsPlugin.Warn("TestTools.ClearCards: " + e); }
         }
 
+        // ---- лёгкий бот ----
+        // добавляет второго игрока под управлением ИИ (нужен хотя бы один игрок: на экране «Поединок» после присоединения или в игре)
+        public static void AddEasyBot()
+        {
+            try
+            {
+                var pa = PlayerAssigner.instance;
+                if (pa == null) { Status = "Нет PlayerAssigner"; return; }
+                int before = PlayerManager.instance.players.Count;
+                var m = typeof(PlayerAssigner).GetMethod("CreatePlayer");
+                m.Invoke(pa, new object[] { null, true });
+                RoundsSettingsPlugin.Instance.StartCoroutine(EaseBot(before));
+                Status = "Бот добавлен";
+            }
+            catch (Exception e) { Status = "Ошибка: " + (e.InnerException != null ? e.InnerException.Message : e.Message); RoundsSettingsPlugin.Warn("TestTools.AddEasyBot: " + e); }
+        }
+
+        static IEnumerator EaseBot(int countBefore)
+        {
+            yield return new WaitForSecondsRealtime(1f);
+            try
+            {
+                var pm = PlayerManager.instance;
+                if (pm.players.Count <= countBefore) yield break;
+                var bot = pm.players[pm.players.Count - 1];
+                var gun = Traverse.Create(bot.data.weaponHandler).Field("gun").GetValue<Gun>();
+                if (gun != null) { gun.damage *= 0.35f; gun.attackSpeed *= 2f; }
+                Status = "Лёгкий бот готов (урон ×0.35, стреляет реже)";
+            }
+            catch (Exception e) { RoundsSettingsPlugin.Warn("EaseBot: " + e.Message); }
+        }
+
+        // ---- достижения Steam ----
+        public static bool AchConfirm;
+        public static void UnlockAllAchievements()
+        {
+            int ok = 0, fail = 0;
+            foreach (FriendlyFoe.Platforms.Achievements a in Enum.GetValues(typeof(FriendlyFoe.Platforms.Achievements)))
+            {
+                try { FriendlyFoe.Platform.PlatformManager.UnlockAchievement(a); ok++; }
+                catch (Exception e) { fail++; RoundsSettingsPlugin.Warn("Achievement " + a + ": " + e.Message); }
+            }
+            Status = "Достижения: отправлено " + ok + (fail > 0 ? ", ошибок " + fail : "");
+        }
+
         public static void Heal()
         {
             var me = Me();
